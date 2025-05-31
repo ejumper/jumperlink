@@ -48,7 +48,7 @@
 
 body {
     margin: 0;
-    background: linear-gradient(rgb(4, 34, 58), rgb(2, 27, 46));
+    background: linear-gradient(rgb(2, 27, 48) 70%, rgb(1, 19, 32));
     display: flex;
     flex-direction:column;
     min-height: 100vh;
