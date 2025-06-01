@@ -1,0 +1,25 @@
+<section class="blogpost">
+<h2 id="overview">Overview</h2>
+<p>Windows Active Directory Domain Services are foundational to running an enterprise network. AD DS stores, organizes, manages and secures all of a company&#39;s  assets and data. In order to gain a better understanding of how to use it, I will be installing it in Windows Server. I will also be configuring the server as a domain controller. A domain controller is the central component of AD DS. It contains a copy of the entire AD DS database and uses it to process authentication and control access to all the resources within the domain. Essentially, it is the enforcer of all of the settings and configurations that are made in the Active Directory environment. Therefore, Active Directory  requires at least one to function so it is essentially part of installing AD DS. I will be using a Windows Server 2019 VM hosted by VirtualBox, but the steps are very similar for later version of Windows Server as well.</p>
+<h2 id="installing-ad-ds">Installing AD DS</h2>
+<p>I <strong>open Server Manager</strong> and <strong>select Role-based or feature-based installation</strong> which starts the Add Roles &amp; Features Wizard.</p>
+<h3 id="add-roles-features-wizard">Add Roles &amp; Features Wizard</h3>
+<p>I select the available server then under Server Roles I select <strong>Active Directory Domain Services</strong> then in the pop-up I <strong>select Add Features</strong>.</p>
+![[Pasted image 20250519104534.png]]
+<p>Under features  PowerShell, Defender Antivirus, Remote Server Administration Tools, Group Policy Management &amp; .NET Framework 4.7 are selected by default. I&#39;ll add more later but for now I just want to get things running so I&#39;ll stick with the defaults.</p>
+<p>Under AD DS it suggests that you should install a minimum of 2 domain controllers for a domain in case of server outage, however since this is a lab and server outage has no real consequences I&#39;ll ignore that, but its worth noting.</p>
+<p>Finally, under <strong>Confirmation</strong> I&#39;ll select <strong>Install</strong> and wait for AD DS and its features to be installed.</p>
+<h2>Promoting A Server to a Domain Controller</h2>
+<p>After closing out of the wizard there&#39;s a warning sign by the notification icon saying that I need to configure the domain in the top right (flag icon), I <strong>select the notification icon</strong> and <strong>select Promote this server to a domain controller</strong>.</p> 
+<img class="blog-img" src="content/labs/images/Pasted image 20250519111336.png">
+<h3>Active Directory Domain Services Configuration Wizard</h3>
+<p>I&#39;ve now started the <strong>Active Directory Domain Services Configuration Wizard</strong></p>
+<p>In <strong>Deployment Configuration</strong> I select <strong>Add a new forest</strong> since there isn&#39;t one yet and choose my <strong>root domain name: jumperdomain.net</strong>
+<p>I verified this domain name against DNS naming guidelines <a href="https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/plan/assigning-domain-names">here</a> to insure that it will work.</p>
+<img class="blog-img" src="content/labs/images/Pasted image 20250519114755.png">
+<p>next under <strong>Domain Controller Options</strong>  I <strong>set a DSRM password</strong></p>
+<p>under DNS Options I left Create a DNS delegation unchecked since I do not have a DNS server to delegate to. This will automatically configure this server with the DNS server role.</p>
+<p>I will leave the NetBIOS name it configures in Additional Options and leave the default locations for AD DS database, log files &amp; SYSVOL in Paths.</p>
+<p>I quickly review  my configurations in Review Options and once the prerequisite checks are all passed in <strong>Prerequisites Check</strong> I review the warnings, since they which are all irrelevant since this is simply a lab &amp; click <strong>Install</strong> and after installing the server will restart, now configured as the Domain Controller.</p>
+<img class="blog-img" src="content/labs/images/Pasted image 20250519120609.png">
+</section>
