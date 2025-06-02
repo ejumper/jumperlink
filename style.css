@@ -135,6 +135,56 @@ body {
 .view-resume:hover {
     transform: translateX(50%) scale(1.05);
 }
+/*----------------------POPUP----------------------*/
+dialog::backdrop,
+.modal-backdrop{ 
+  background: rgba(0,0,0,.55);
+  backdrop-filter: blur(3px);
+}
+
+/* 2B · Base modal panel */
+.modal{
+  border: none;
+  padding: 1.8rem 2.2rem;
+  border-radius: 10px;
+  background: var(--dark-blue);
+  color: var(--light-blue);
+  position: fixed;
+  bottom: 75vh;
+  left: 70%;
+  transform: translateX(-50%);
+  flex-direction: column;
+  gap: 1.2rem;
+  box-shadow: 0 15px 35px rgba(0,0,0,.45);
+  z-index: 1000;
+}
+
+.modal:not([open]){ display:none; }
+
+.hidden{ display:none; }
+
+.modal-close{
+  position: absolute;
+  top: .6rem;
+  right: .8rem;
+  font-size: 1.8rem;
+  background: transparent;
+  border: none;
+  color: var(--light-blue);
+  cursor: pointer;
+}
+
+.modal-action{
+  background: var(--med-blue);
+  color: var(--dark-blue);
+  font-weight: 700;
+  padding: .6rem 1.2rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.modal-action:hover{ background: #4d8aff; }
+
 
 /*----------------------MENU----------------------*/
 .nav-menu{

@@ -102,4 +102,68 @@ document.addEventListener('DOMContentLoaded', () => {
     active.classList.add('selected');
     showMenu(active);
   }
+
+// ───────────────────────────────────────────────────────────────
+// 3.1  Grab references
+// ───────────────────────────────────────────────────────────────
+const mailBtn   = document.getElementById('mail-btn');
+const phoneBtn  = document.getElementById('phone-btn');
+const mailDlg   = document.getElementById('mail-dialog');
+const phoneDlg  = document.getElementById('phone-dialog');
+
+// ADA: first focusable element inside each dialog
+const mailFirst = document.getElementById('open-mail');
+const phoneFirst= document.getElementById('call-phone');
+
+// ───────────────────────────────────────────────────────────────
+// 3.2  Helper to open / close
+// ───────────────────────────────────────────────────────────────
+function openDialog(dlg, firstFocusable){
+  if (typeof dlg.showModal === 'function') dlg.showModal();
+  else dlg.classList.remove('hidden');          // fallback
+
+  firstFocusable.focus();                       // send focus inside
+  document.addEventListener('keydown', escClose);
+}
+
+function closeDialog(dlg){
+  if (typeof dlg.close === 'function') dlg.close();
+  else dlg.classList.add('hidden');
+  document.removeEventListener('keydown', escClose);
+}
+
+function escClose(e){
+  if (e.key === 'Escape'){
+    [mailDlg, phoneDlg].forEach(d=>d.open && closeDialog(d));
+  }
+}
+
+// ───────────────────────────────────────────────────────────────
+// 3.3  Wire icon clicks
+// ───────────────────────────────────────────────────────────────
+mailBtn.addEventListener('click', () => openDialog(mailDlg, mailFirst));
+phoneBtn.addEventListener('click',()=> openDialog(phoneDlg, phoneFirst));
+
+// ───────────────────────────────────────────────────────────────
+// 3.4  Action buttons inside dialogs
+// ───────────────────────────────────────────────────────────────
+document.getElementById('open-mail')
+        .addEventListener('click', () => window.location.href = 'mailto:eric@jumperlink.net');
+
+document.getElementById('call-phone')
+        .addEventListener('click', () => window.location.href = 'tel:+18179657116');
+
+document.getElementById('sms-phone')
+        .addEventListener('click', () => window.location.href = 'sms:+18179657116');  // :contentReference[oaicite:8]{index=8}
+
+// Close-buttons (×) and backdrop clicks
+document.querySelectorAll('.modal-close').forEach(btn=>{
+  btn.addEventListener('click', e => closeDialog(e.target.closest('.modal')));
+});
+[mailDlg, phoneDlg].forEach(dlg=>{
+  dlg.addEventListener('click', e=>{
+    if (e.target === dlg) closeDialog(dlg);     // click on backdrop
+  });
+});
+  
 });

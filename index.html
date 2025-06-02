@@ -18,21 +18,21 @@
     </div>
     <a class="view-resume" href="documents/resume.pdf" target="_blank" rel="noopener" aria-label="View Resume (PDF, opens in new tab)"> VIEW&nbsp;RESUME</a> 
     <nav class=icon-group>
-      <a class="mail"href="mailto: eric@jumperlink.net" aria-label="E‑mail">
+      <button id="mail-btn"   class="icon-btn" aria-label="E-mail">
         <svg version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px"
 	      viewBox="0 0 800 800" style="enable-background:new 0 0 800 800;" xml:space="preserve">
         <path class="st0" d="M666.7,133.3H133.3c-36.7,0-66.3,30-66.3,66.7l-0.3,400c0,36.7,30,66.7,66.7,66.7h533.3
 	      c36.7,0,66.7-30,66.7-66.7V200C733.3,163.3,703.3,133.3,666.7,133.3z M666.7,266.7L400,433.3L133.3,266.7V200L400,366.7L666.7,200
 	      V266.7z"/></svg>
-      </a>
-      <a href="tel:+18179657116" aria-label="Phone">
+      </button>
+      <button id="phone-btn"  class="icon-btn" aria-label="Phone">
         <svg version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px"
 	      viewBox="0 0 800 800" style="enable-background:new 0 0 800 800;" xml:space="preserve">
         <path class="st0" d="M220.7,359.7C268.7,454,346,531,440.3,579.3l73.3-73.3c9-9,22.3-12,34-8c37.3,12.3,77.7,19,119,19
 	      c18.3,0,33.3,15,33.3,33.3v116.3c0,18.3-15,33.3-33.3,33.3C353.7,700,100,446.3,100,133.3c0-18.3,15-33.3,33.3-33.3H250
 	      c18.3,0,33.3,15,33.3,33.3c0,41.7,6.7,81.7,19,119c3.7,11.7,1,24.7-8.3,34L220.7,359.7z"/>
         </svg>
-      </a>
+      </button>
       <!-- <a href="https://www.linkedin.com/in/ericjumper22" target="_blank" rel="noopener" aria-label="LinkedIn">
         <svg version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px"
 	      viewBox="0 0 800 800" style="enable-background:new 0 0 800 800;" xml:space="preserve">
@@ -68,6 +68,24 @@
     <h1 id="menu-title" class="menu-title" aria-live="polite"></h1>
     <main class="content-box"></main>
   </main>
+  <dialog id="mail-dialog" class="modal" aria-modal="true" aria-labelledby="mail-title">
+  <button class="modal-close" aria-label="Close">×</button>
+  <h3 id="mail-title">eric@jumperlink.net</h3>
+
+  <button class="modal-action" id="open-mail">
+    Open with default e-mail app
+  </button>
+</dialog>
+
+<dialog id="phone-dialog" class="modal" aria-modal="true" aria-labelledby="phone-title">
+  <button class="modal-close" aria-label="Close">×</button>
+  <h3 id="phone-title">+1 817 965 7116</h3>
+
+  <div class="modal-actions">
+    <button class="modal-action" id="call-phone">Call</button>
+    <button class="modal-action" id="sms-phone">Message</button>
+  </div>
+</dialog>
 </body>
 </html>
 
