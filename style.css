@@ -121,11 +121,20 @@ body {
     left: var(--button-spacing);
     gap: var(--icon-gap);    
 }
+
 .icon-group svg {
     height: var(--icon-width);
     fill: var(--med-blue);
     filter: drop-shadow(-3px 3px var(--shadow-blur-one) black);
     transition: transform .05s ease-in-out;
+}
+
+.icon-btn{
+    background: transparent;
+    border: transparent;
+    padding: 0;
+    cursor: pointer;
+
 }
 
 .icon-group svg:hover {
@@ -142,20 +151,17 @@ dialog::backdrop,
   backdrop-filter: blur(3px);
 }
 
-/* 2B · Base modal panel */
 .modal{
   border: none;
   padding: 1.8rem 2.2rem;
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--dark-blue);
   color: var(--light-blue);
-  position: fixed;
-  bottom: 75vh;
-  left: 70%;
-  transform: translateX(-50%);
+  top: -80%;
+  display: flex;
   flex-direction: column;
   gap: 1.2rem;
-  box-shadow: 0 15px 35px rgba(0,0,0,.45);
+  box-shadow: 0 15px 35px rgba(0,0,0,.2);
   z-index: 1000;
 }
 
@@ -421,22 +427,22 @@ p{
 
 .adds{
     background: linear-gradient(rgba(67, 202, 83, 0.25), rgba(67, 202, 83, 0.1));
-    color: rgba(155, 255, 197, 0.9);  
+    color: rgba(155, 255, 197, 0.85);  
 }
 
 .ticketing{
     background: linear-gradient(rgba(201, 84, 255, 0.3), rgba(201, 84, 255, 0.15));
-    color: rgba(216, 168, 255, 0.9);
+    color: rgba(218, 172, 255, 0.9);
 }
 
 .vm{
     background: linear-gradient(rgba(202, 139, 67, 0.25), rgba(202, 139, 67, 0.12));
-    color: rgba(252, 175, 60, 0.9);
+    color: rgba(255, 216, 157, 0.8);
 }
 
 .other{
     background: linear-gradient(rgba(180, 45, 79, 0.3), rgba(180, 45, 79, 0.13));
-    color: rgba(255, 165, 210, .9);
+    color: rgba(255, 158, 207, 0.9);
 }
 
 h5{
