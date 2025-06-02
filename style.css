@@ -157,9 +157,8 @@ dialog::backdrop,
   border-radius: 12px;
   background: var(--dark-blue);
   color: var(--light-blue);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  position: fixed;
+  bottom: 73%;
   gap: 1.2rem;
   box-shadow: 0 15px 35px rgba(0,0,0,.2);
   z-index: 1000;
