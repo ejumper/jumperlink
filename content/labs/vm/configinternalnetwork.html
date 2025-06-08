@@ -1,0 +1,40 @@
+<section class="blogpost">
+<h2>Demonstrated Skills</h2>
+<ul class="skills">
+<li>Configuring Network Settings</li>
+</ul>
+<h2>Objective</h2>
+<p>In this post I will be showing my process for configuring an internal network between my domain controller and its clients. I will set up the Network Adapter in Virtual box, configure it with a static IP address, a subnet mask &amp; a DNS server &amp; finally test the connection between the server and the client.</p>
+<h2>Setup</h2>
+<p>In <strong>VirtualBox Manager</strong> I select <strong>Settings</strong> &gt; <strong>Expert</strong> &gt; <strong>Network</strong></p>
+<p>I set up a <strong>second adapter</strong> set to <strong>Internal Network</strong> so that the Server and Windows 11 VMs could communicate.</p>
+<p>the rest of the settings should be fine as automatically configured</p>
+<p>Adapter type</p>
+<p>this setting chooses a NIC to emulate and based on what I found <a href="https://www.nakivo.com/blog/virtualbox-network-setting-guide/">here</a> the default Intel Pro/1000 MT Desktop (82540EM) works well with all Windows devices so there's no reason to adjust it.</p>
+<p>Promiscuous Mode</p>
+<p>from what I read <a href="https://fastneuron.com/forum/showthread.php?tid=4293">here</a> the main utility of promiscuous mode is that it allows you to monitor network traffic. Since I'm not configuring a firewall or IDS I left it on Deny.</p>
+<img class="blog-img" src="content/labs/images/Pasted image 20250518175347.png">
+<p>Next I will configure an IP address for the internal network</p>
+<p>I go to <strong>Control Panel</strong> &gt; <strong>Network &amp; Sharing Center</strong> applet &amp; on the left hand menu I select <strong>Change adapter settings</strong></p>
+<img class="blog-img" src="content/labs/images/Pasted image 20250518212657.png">
+<p>I know from having done this before that Ethernet is my internet connection and Ethernet 2 is my internal network however to confirm this I can right click on either &amp; select <strong>status</strong> &gt; Select <strong>Details...</strong></p>
+<p>Ethernet 1</p>
+<p>The IP address 10.0.2.15, the Default Gateway of 10.0.2.2 &amp; the DHCP Server 10.0.2.2  are the default addresses VirtualBox uses for NAT mode which allows you to connect the VM to the host's network in order to access the internet as outlined <a href="https://www.nakivo.com/blog/virtualbox-network-setting-guide/">here</a></p>
+<p>so for clarity I right click on the Network and <strong>rename</strong> it to "INTERNET"</p>
+<img class="blog-img" src="content/labs/images/Pasted image 20250518213709.png">
+<p>Ethernet 2</p>
+<p>It is even clearer here that this is the internal network as it has been autoconfigured with the APIPA address 169.254.181.211</p>
+<p>again for clarity I rename it to "INTERNALNET"</p>
+<img class="blog-img" src="content/labs/images/Pasted image 20250518215325.png">
+<p>Now I will configure the internal network's  IP Address</p>
+<p>I right click on <strong>INTERNALNET</strong> and select <strong>properties</strong></p>
+<p>under <strong>This connection uses the following items:</strong> I select <strong>Internet Protocol Version 4 (TCP /IPv4)</strong> then click <strong>Properties</strong></p>
+<p>In the <strong>General Tab</strong> I select <strong>Use the following IP address</strong></p>
+<p>Now I can assign a static IP address</p>
+<p>the first step here is to select a private IP range that can be used on all my VMs to access the internal network. It doesn't particularly matter which private range I choose and the Class C range was the first to pop into my head so I went with 192.168.0.0</p>
+<p>I will assign a <strong>subnet mask of 255.255.255.0</strong> and number each device in the final octet starting with this device giving it an <strong>IP address of 192.168.0.10</strong> (Even though I do not have a default gateway using 192.168.0.1 I figured it was good practice to reserve a few addresses for network services. This is why I started with .10)</p>
+<p>Since this is an isolated internal network there is reason to configure a Default Gateway</p>
+<p>Since AD DS automatically installs DNS and this server will use itself as a DNS server I will put its own <strong>IP address of 192.168.10 as the Preferred DNS server</strong> &amp; the  <strong>loopback address 127.0.0.1 as the alternate DNS server</strong></p>
+<p><em>I originally placed the loopback address as the primary DNS server however best practice analyzer considered this an error. Since I only have one Domain Controller I believe it would have been fine but to follow best practices I went ahead and changed it</em></p>
+<img class="blog-img" src="content/labs/images/Pasted image 20250518230604.png">
+</section>

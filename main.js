@@ -97,7 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // --------------------------------------------------------------
   // 5.   default selection
   // --------------------------------------------------------------
-  active = document.querySelector('.menu-item[href="#homelabs"]');
+  active = document.querySelector('.menu-item[href="#about"]');
   if (active){
     active.classList.add('selected');
     showMenu(active);

@@ -1,0 +1,53 @@
+<section class="blogpost">
+<p>View the website's repository here</p>
+<h2>Skills Demonstrated</h2>
+<ul class="skills">
+<li>HTML</li>
+<li>CSS</li>
+<li>Cloudflare Pages</li>
+<li>Creating and deploying a Git repository</li>
+</ul>
+<h2>Purchasing a Domain</h2>
+<p>For my website, I elected to get a custom domain rather than ...sing Cloudflare Pages for hosting so it just made it easier.</p>
+<h2>Hosting</h2>
+<p>I used Cloudflare Pages for free hosting. The primaryfree alternative was GitHub Pages, however, I like</p>
+<h2>Learning HTML & CSS</h2>
+<p>I found that both HTML & CSS were incredibly intuitive and ea...utube videos to get a hold on larger concepts like CSS grid.</p>
+<h2>JavaScript</h2>
+<p>The site also contains a little bit of JavaScript to handle the HTML injection and the link menus, but while I really want to learn JavaScript I did not think the amount of effort it would take to be able to write the limited amount of JavaScript needed was worth it so I used a combination of my local instillation of Llama3.2 as well as Duckduckgo's duck.ai, which provides access to a number of free models of which I used primarily o3-mini and Claude 3 Haiku. At the end I also used DeepSeeks DeepThink ...</p>
+<h2>Making the Site</h2>
+<p>In my other posts I have gone through my step by step process, however, due to the enormity of the work and the constant revising this project required it just didn't seem practical to document and screenshot every step I took, so I will instead have a simple run through of how the site works.</p>
+<p>From the start I had the idea to keep the website on a single webpage with a container that I could inject other HTML files into to display whatever I wanted. I also wanted to design the site so that it would work equally well on mobile and desktop. This was probably not a pragmatic approach as creating a scaling that worked at any size was by far the hardest part but it also resulted in me having to gain a much better understanding, of the declarations I was using where I otherwise could have just set...</p>
+<p>The three main elements, the title bar,  navigation menu and content container are placed using a flex-box.</p>
+<p>The items in the title bar are placed using absolute positioning.</p>
+<p>I created a clamp to scale my name up and down and that clamp was used as the basis for all the scaling on the page.</p>
+<p>The mail and phone icons are scaled to a fraction of that clamp and the "view resume" button is scaled to equal the sum of the icons width and the gap between them to maintain symmetry.</p>
+<p>The navigation menu is a simple flexbox with :hover and :select affects in CSS to create the animations. It is scaled by scaling the side margins with the size of the viewport. This was probably not the best solution because as the viewport widens the menu scales up as it should but then eventually shrinks. The issue is that because of my cascading use of variables everything else on the page would also have to be resized and it is not enough of a problem to warrant the effort.</p>
+<p>I created HTML files for each of the menu items that JavaScript injects into the content box.</p>
+<p>For the Home Labs I listed all of my projects in an HTML file and used CSS to turn it into a grid. Then I created more HTML files for each specific project which are injected into the content box when a project is selected from the home labs tab.</p>
+<p>I plan to create a back button in the content box that appears when you open a home lab project to make navigating back to the home lab grid menu more intuitive, but at the time of writing I have figured out a workable solution and selecting the home lab button again accomplishes this anyway.</p>
+<h2>Deploying</h2>
+<p>Cloudflare Pages has two options for deployment: Importing Git repositories and direct uploading. I'll be using Git for easy version control and deployment.</p>
+<img class="blog-img" src="content/labs/images/Pasted image 20250604122609.png">
+<p>I will of course be using GitHub to hold my Git repository. And the first step is to <em>Create a new repository</em></p>
+<img class="blog-img" src="content/labs/images/Pasted image 20250531124003.png">
+<p>I <em>choose my repository name and uncheck add a README, select Create & copy the repository's URL</em></p>
+<img class="blog-img" src="content/labs/images/Pasted image 20250531124031.png">
+<p>Now in Terminal I <em>cd to my project folder</em>, use <em>git init</em> to to create a new Git repository, then <em>git remote add origin and my repository url</em> to link my local project files to my repository, then (after remembering to add git) use <em>git add . to stage the changes in my working directory</em>, then I <em>commit the changes with git commit -m</em></p>
+<p>I then <em>rename the branch to "main"</em> and use <em>git push -u origin main</em> to set the main branch as the default branch for future commits.</p>
+<img class="blog-img" src="content/labs/images/Pasted image 20250531123911.png">
+<p>I quickly check that my files have appeared in my GitHub repo then reopen cloudflare to create Cloudflare Page</p>
+<p>I <em>connect my GitHub account, add my account and select my repository</em>.</p>
+<img class="blog-img" src="content/labs/images/Pasted image 20250531124823.png">
+<img class="blog-img" src="content/labs/images/Pasted image 20250531124930.png">
+<img class="blog-img" src="content/labs/images/Pasted image 20250531125258.png">
+<p>once I configured my Cloudflare Page I tried to view my site, but there was an error.</p>
+<img class="blog-img" src="content/labs/images/Pasted image 20250531130621.png">
+<p>after a looking around for a little bit I discovered that Clo....html so I renamed it and pushed the update to my repository</p>
+<img class="blog-img" src="content/labs/images/Pasted image 20250531130847.png">
+<p>After that my website was online! The last step is to link my custom domain to my Cloudflare Page.</p>
+<img class="blog-img" src="content/labs/images/Pasted image 20250531130953.png">
+<p>Since Cloudflare manages my DNS the process is very simple, I...then repeated this step with the www subdomain and I'm done!</p>
+<img class="blog-img" src="content/labs/images/Pasted image 20250531131430.png">
+<img class="blog-img" src="content/labs/images/Pasted image 20250531133642.png">
+</section>
