@@ -1,0 +1,24 @@
+<section class="blogpost">
+    <h2>Demonstrated Skills</h2>
+<ul class="skills">
+  <li>Creating Custom Services on a router</li>
+</ul>
+
+<h2>Overview</h2>
+<p>I want to expose my server to the Internet, so I can access my server from outside of it the first step is ensuring the device has a static internal IP address so the router always knows where to send traffic.</p>
+
+<h2>Setup</h2>
+<p>I begin by <strong>finding my server's IP address</strong></p>
+<p><img class="blog-img" src="content/labs/images/Pasted image 20250604095943.png"></p>
+<p>Then I  <strong>type my router's internal IP address into a web browser</strong>.</p>
+<p>Now I need to create a Port Forwarding rule for both encrypted (port 443) and unencrypted (port 80) traffic. I can do this by going to <strong>Firewall > NAT/Gaming</strong></p>
+<p><img class="blog-img" src="content/labs/images/Pasted image 20250604100450.png"></p>
+<p>Now I'm prompted to enter my <strong>Device Access code</strong> which can be found on the side of my router.</p>
+<p>In the predefined Services I see ones for HTTP &amp; HTTPS which is what I need but they are configured for TCP and UDP. These would work but since I won't be using UDP ports in an effort to keep things as secure and simple as possible I will <strong>create my own custom services</strong>.</p>
+<p><img class="blog-img" src="content/labs/images/Pasted image 20250604101027.png"></p>
+<p>The process is straightforward, I just enter the <strong>Service's name, port range, host port and protocol and select add and</strong> they appear under my custom service list.</p>
+<p><img class="blog-img" src="content/labs/images/Pasted image 20250604102406.png"></p>
+<p>I then <strong>return to the NAT/Gaming tab</strong>, <strong>select the service I created and my Server's IP address</strong> and <strong>select Add</strong></p>
+<p><img class="blog-img" src="content/labs/images/Pasted image 20250604102946.png"></p>
+
+</section>

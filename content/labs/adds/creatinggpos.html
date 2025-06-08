@@ -1,0 +1,27 @@
+<section class="blogpost">
+<h2>Overview</h2>
+<p>A Group Policy Object (GPO) is a collection of policy settings, security permissions or scopes of management that are linked to OUs, sites or entire domains. Group Policies can be easily created in the Group Policy Editor which uses dropdown menus containing different categories of policies separated between those that are applicable to users and computers. In this post, I will go through the process of creating a GPO and applying it to an OU. I have chosen to create one that denies users access to the Control Panel, however, the process is the same for configuring other permission.</p>
+<h2>Setup</h2>
+<p>Starting in <strong>Server Manager</strong> I go to <strong>Tools</strong> &gt; <strong>Group Policy Management</strong></p>
+<img class="blog-img" src="content/labs/images/Pasted image 20250521140810.png">
+<p>Since I haven't created any GPOs for this domain all I see is the default policies created with the domain &amp; the domain controller.</p>
+<p>to create a new GPO I'll <strong>right-click on Group Policy Objects</strong> &gt; select <strong>New</strong></p>
+<img class="blog-img" src="content/labs/images/Pasted image 20250521141324.png">
+<p>the New GPO pop-up appears allowing us to name the GPO &amp; select a starter GPO if necessary.</p>
+<p>After hitting <strong>OK</strong>, I'll return to the navigation panel &amp; <strong>right-click on the newly created GPO</strong> &gt; <strong>select edit</strong></p>
+<img class="blog-img" src="content/labs/images/Pasted image 20250521141524.png">
+<p>Here, in the Group Policy Management Editor I can configure the GPO based on the policy settings provided. Windows groups policy settings into "User Configurations" (for user accounts) &amp; "Computer Configurations" (for Computer Accounts). By going in and selecting any of these policies then selecting "edit policy setting" I can configure policy setting to my liking. I will come back to the GPME in a moment to configure the GPOs I outlined in the overview, but first I want to explore linking GPOs to OUs.</p>
+<h2>Linking GPOs to OUs</h2>
+<p>GPOs are primarily applied to computer or user accounts by linking them to containers, however, only specific kinds of containers can be linked: Sites, domains &amp; OUs. The scope &amp; precedence is very different when applying GPOs to each of these containers; the process differs only in which of the containers you right-click or drag the GPO onto inside the Group Policy Management Console.</p>
+<h2>Moderating Access to Control Panel</h2>
+<p>I have set up an OU called "_USERS" I will create a GPO to disable users in this OU from accessing Control Panel.</p>
+<p>In the <strong>Group Policy Management</strong> console I <strong>right-click on _USERS</strong> &amp; select <strong>Create a GPO in this domain, and Link it here</strong> and <strong>Name it</strong> "Disable Control Panel"</p>
+<img class="blog-img" src="content/labs/images/Pasted image 20250521152353.png">
+<p>Then I <strong>right-click on the GPO</strong> inside <strong>Group Policy Objects</strong> &amp; select <strong>Edit</strong></p>
+<p>Now inside GPME I'll go to <strong>User Configuration</strong> &gt; <strong>Policies</strong> &gt; <strong>Administrative Templates</strong> &gt; <strong>Control Panel</strong></p>
+<p>Inside the details panel I'll select the <strong>Prohibit access to Control Panel and PC settings</strong> &gt; then select <strong>edit policy settings</strong> (to the left of it) &gt; and in the pop-up menu <strong>select Enabled</strong> &gt; <strong>Apply</strong> &gt; <strong>OK</strong></p>
+<img class="blog-img" src="content/labs/images/Pasted image 20250521154100.png">
+<p>Now in GPMC when the _USERS OU is expanded the new GPO can be seen, however, when I click on it I notice the details panel shows that it is not being Enforced.</p>
+<p>so I <strong>right-click on the GPO</strong> &amp; switch it from Link Enabled to <strong>Enforced</strong></p>
+<img class="blog-img" src="content/labs/images/Pasted image 20250521154948.png">
+</section>

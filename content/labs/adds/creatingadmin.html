@@ -1,0 +1,34 @@
+<section class="blogpost">
+    <h2>Skills Demonstrated</h2> 
+    <ul class="skills">
+    <li>Creating User Accounts</li> 
+    <li>Creating Organizational Units</li> 
+    </ul>
+    <h2>Overview</h2> 
+    <p>An administrator account is a default account used in all versions of Windows OS. 
+        It provides full access to the resources and the configuration of those resources for a device, which in this case is a domain controller. 
+        Therefore, before beginning to do anything on a domain controller, one must be configured. 
+        It's worth specifying that an admin account on a domain controller necessarily gains access to resources in that domain and is therefore a target. 
+        It is paramount that the account properties are set up securely. 
+        This includes setting especially strong passwords and restricting Remote Desktop access through Group Policies. 
+        In this post I will walk through this process and as part of it I will also be going through the process of creating Organizational Units and users accounts. 
+    </p> 
+    <h2>Creating an Admin OU</h2> 
+    <p>I begin going to <strong>Server Manager</strong> &gt; <strong>Tools</strong> &gt; <strong>Active Directory Users and Computers</strong>.</p> 
+    <p>In the left-hand navigation Panel I <strong>right-click on domain</strong> (in my case jumperdomain.net)</p> 
+    <p>Then I go <strong>New</strong> &gt; <strong>Organizational unit</strong> to create an OU to house the admin accounts.</p> 
+    <img class="blog-img" src="content/labs/images/Pasted image 20250519214530.png"> 
+    <p><strong>type in the name</strong> and for my purposes I meant to uncheck the "Protect container from accidental deletion" but I forgot which isn't a bad thing because now I can figure out how to delete OUs that are protected from deletion.</p> 
+    <p>after some scrolling through stack overflow I select the <strong>view</strong> tab &gt; <strong>advanced features</strong> &gt; <strong>right-clicked the OU</strong> &gt; select <strong>Properties</strong> &gt; go to <strong>Object</strong> &amp; unselect the <strong>Protect object from accidental deletion</strong></p> 
+    <img class="blog-img" src="content/labs/images/Pasted image 20250519215326.png"> 
+    <h2>Creating an Admin User</h2> 
+    <p>Back on track I will now create a user account inside the _Admin OU by <strong>right clicking on the OU</strong> &gt; selecting <strong>New</strong> &gt; <strong>User</strong></p> 
+    <p>I configure my name since this is my Admin account. for the logon name I found the naming convention "a-ejumper" online and so I went with it. </p> 
+    <img class="blog-img" src="content/labs/images/Pasted image 20250519223017.png">
+    <p>After hitting <strong>Next</strong> I configure my password and for the purposes of the lab turn off "User must change password at next logon", hit <strong>Next</strong>, review the information &amp; hit <strong>Finish</strong></p> 
+    <p>Now in order to give the account admin privileges I <strong>right click on it</strong> &gt; <strong>select properties</strong> and in the properties panel <strong>select the Member of tab</strong> and in the <strong>Enter the object names to select dialogue box</strong> I enter <strong>Domain Admins</strong>, <strong>select Check Names</strong>, then <strong>OK</strong> &gt; <strong>Apply</strong> &gt; <strong>OK</strong></p> 
+    <img class="blog-img" src="content/labs/images/Pasted image 20250519225433.png">
+    <p>I do a quick <strong>Window+L</strong> to log out (forgetting that I am in a VM and will also log out of my host OS, oh well)</p> 
+    <p>Now I select <strong>Other users</strong> and sign in with my admin user account</p> 
+    <img class="blog-img" src="content/labs/images/Pasted image 20250519230017.png">
+</section>.

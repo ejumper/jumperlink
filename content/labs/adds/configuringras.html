@@ -1,0 +1,49 @@
+<section class="blogpost">
+    <h2>Skill Demonstrated</h2> 
+    <ul class="skills"> 
+        <li>Setting up RRAS</li> 
+        <li>Configuring DHCP</li> 
+    </ul> 
+    <h2>Overview</h2> 
+    <p>Remote Access Service (RAS) with Network Address Translation (NAT) is a powerful feature in Windows Server that enables a domain controller to function as the default gateway, routing internet traffic for client devices. 
+        This tool is ideal for my virtual lab environment as it allows me to more closely simulate an enterprise network configuration without the need for a dedicated router. 
+        As a part of this setup, I also need to configure the DHCP server role on the domain controller to automate the assignment of IP addresses to the client devices using the domain controller as their gateway to the internet. 
+        I will be using Windows Server 2019 running on a virtual machine hosted by VirtualBox. 
+        The steps, however, are very similar for any later versions of Windows Server.</p> 
+    <h2>Setup</h2> 
+    <p>I begin in <strong>Server Manager</strong> &gt; <strong>Add Roles &amp; Features</strong>.</p> 
+    <p>Progressing through the wizard until <strong>Server Selection</strong> where I would <strong>select the domain controller</strong> but since I only have one server it obviously already is.</p> 
+    <p>After progressing to the next section of the wizard, <strong>Server Roles</strong>, I add the <strong>Remote Access role</strong>.</p> 
+    <p>Then continuing on until the <strong>Role Services</strong> section I select <strong>Routing</strong> and select <strong>Add Feature</strong> in the pop-up menu (this will automatically also select the DirectAccess and VPN (RAS) Role service).</p> 
+    <p>After that I can progress through the wizard until I reach <strong>Confirmation</strong> and select <strong>Install</strong>, wait for it to install, and close the wizard.</p> 
+    <img class="blog-img" src="content/labs/images/Pasted image 20250520120737.png"> 
+    <p>Next, still in <strong>Server Manager</strong> I can go to <strong>Tools</strong> &gt; <strong>Routing and Remote Access</strong> &gt; <strong>right-click on my DC</strong> &gt; <strong>select Configure and Enable Routing and Remote Access</strong> &amp; begin the Routing and Remote Access Server Setup Wizard.</p> 
+    <img class="blog-img" src="content/labs/images/Pasted image 20250520121224.png"> 
+    <p>After the welcome screen on the configuration page I <strong>select Network address translation (NAT)</strong> as the purpose here is to simply allow my Windows 11 VM to access the internet through the DC so a VPN tunnel is unnecessary.</p>
+    <p>On the <strong>NAT Internet Connection</strong> page of the wizard I verify that <strong>Use this public interface to connect to the Internet</strong> is selected then <strong>select the Network Interface that connects to the Internet</strong> (I have previously gone into adapter settings in the Network &amp; Sharing Center and labeled my Network Interfaces so I can tell which is my internal network &amp; which is the external network).</p>
+    <p><em>In past attempts at setting this up I have gotten to this step and my network interfaces have not been automatically detected. I could not figure out what was causing this problem but canceling &amp; restarting the wizard has worked every time.</em></p> 
+    <img class="blog-img" src="content/labs/images/Pasted image 20250520122759.png"> 
+    <p>After completing the wizard I get this warning saying Windows Firewall may block VPN connections. From what I’ve found online this always appears when RRAS can’t automatically open certain firewall ports used by VPN services, even if you only set up the NAT service. The NAT should work fine though since when I navigate to my DC &gt; IPv4 &gt; NAT I can see my public interface is present.</p> 
+    <img class="blog-img" src="content/labs/images/Pasted image 20250520123446.png"> <h2>DHCP Server</h2> 
+    <p>I begin in <strong>Server Manager</strong> &gt; <strong>Add Roles &amp; Features</strong>.</p> 
+    <p>Progressing through the wizard until <strong>Server Selection</strong> where I would <strong>select the domain controller</strong> but since I only have one server it obviously already is.</p> 
+    <p>After progressing to the next section of the wizard, <strong>Server Roles</strong>, I select the <strong>DHCP Server</strong> role &gt; <strong>Add Feature</strong> and progress through the wizard, <strong>select Install</strong> &amp; wait for the role to install.</p> 
+    <img class="blog-img" src="content/labs/images/Pasted image 20250520144411.png"> 
+    <p>After it is installed I <strong>close the wizard</strong> then back in <strong>Server Manager</strong> I go to <strong>Tools</strong> &gt; <strong>DHCP</strong>.</p> 
+    <p>In the left-hand navigation panel I <strong>expand IPv4</strong> &gt; <strong>right-click on IPv4</strong> &gt; <strong>select New Scope...</strong></p> 
+    <img class="blog-img" src="content/labs/images/Pasted image 20250520144851.png"> 
+    <p>Now inside the New Scope Wizard I progress past the welcome screen to the <strong>Scope Name</strong> page.</p> 
+    <p>To make things easy I will go ahead and name the scope after the IP range I will allot it, in this case it will be 192.168.0.100-200.</p> 
+    <img class="blog-img" src="content/labs/images/Pasted image 20250520153502.png"> 
+    <p>And on the next page, <strong>IP Address Range</strong> I will <strong>assign it that range</strong> and the wizard will automatically configure a mask length of 24 with the subnet mask 255.255.255.0.</p> 
+    <img class="blog-img" src="content/labs/images/Pasted image 20250520153807.png"> 
+    <p>On the next page it allows me to add an excluded range but since I intentionally configured a scope to start at .100, well after the address of 192.168.0.10 I gave my Domain Controller &amp; I don't have any other addresses I'd like to exclude, I will skip this step.</p> 
+    <p>Now on the <strong>Lease Duration</strong> page, I will leave it at the default <strong>8 days</strong>. Since I will not come close to using all the addresses in my scope it doesn't really matter what it's set at.</p> 
+    <p>On the next page I will select <strong>Yes, I want to configure these options now</strong>.</p> <p>As I mentioned my domain controller has an address of <strong>192.168.0.10</strong> and since I configured NAT on the domain controller I will use that <strong>as the default gateway</strong> and then click <strong>ADD</strong>.</p> 
+    <img class="blog-img" src="content/labs/images/Pasted image 20250520154938.png"> 
+    <p>On the <strong>Domain Name &amp; DNS Servers</strong> page I will leave <strong>jumperdomain.net</strong> as the domain used for DNS resolution since it is acting as my DNS server.</p> <p>With nothing left to configure I <strong>progress to the end of the wizard</strong> &amp; click <strong>Finish</strong>.</p> 
+    <p>Looking at IP icons I see that they still have a red icon in them indicating they can't assign addresses so I <strong>right-click on the domain</strong> &gt; <strong>select authorize</strong> and they are still red so I <strong>right-click on the domain</strong> again &gt; <strong>select refresh</strong> and now they are green indicating that DHCP is now configured and working in the domain.</p> 
+    <img class="blog-img" src="content/labs/images/Pasted image 20250520155721.png"> 
+    <img class="blog-img" src="content/labs/images/Pasted image 20250520155951.png"> 
+    <img class="blog-img" src="content/labs/images/Pasted image 20250520160225.png">
+</section>
