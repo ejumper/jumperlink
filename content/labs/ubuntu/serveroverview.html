@@ -1,0 +1,1029 @@
+<p>Since I had already created my home server by the time I decided to begin documenting the implementation of my various home lab projects, I am not able to provide the step by step process I took to create it. I did, however, create thorough documentation on the setup I have created for my own education and future reference, and have continuously updated them to match any changes. I have made documents for almost every service, configuration and application on my server. This file serves as the overview containing a broad overview and the most important information. I believe it is a testament to my dedication to learning my servers system, configuring it in a reliable and secure way, and ensuring I am able to competently administer it. </p>
+<h2 id="system-information">SYSTEM INFORMATION</h2>
+<p><strong>Hardware</strong></p>
+<ul>
+<li><strong>Hostname</strong>: ejumps-server</li>
+<li><strong>Architecture</strong>: ARM64 (aarch64)</li>
+<li><strong>CPU</strong>: ARM Cortex-A76 (4 cores)</li>
+<li><strong>Memory</strong>: 7.8 GB RAM, 1.0 GB Swap (422 MB used)</li>
+<li><strong>Storage</strong>: 235 GB total, 165 GB used (74% utilization)<ul>
+<li>Boot partition: 505 MB (/boot/firmware)</li>
+<li>Main filesystem: mmcblk0p2 (SD card)
+<strong>OS</strong></li>
+</ul>
+</li>
+<li><strong>OS</strong>: Ubuntu 24.04.3 LTS</li>
+<li><strong>Kernel</strong>: Linux 6.8.0-1032-raspi
+<strong>Network Config</strong> (see more below)</li>
+<li>Primary Interface: eth0<ul>
+<li>IPv4: 192.168.1.81/24</li>
+<li>IPv6: 2600:1702:4fc9:9010::43/128</li>
+<li>MAC: 2c:cf:67:7f:45:60
+<strong>Ports</strong></li>
+</ul>
+</li>
+<li>TCP:80<ul>
+<li>HTTP (redirects)</li>
+</ul>
+</li>
+<li>TCP:443<ul>
+<li>HTTPS (Nextcloud)</li>
+</ul>
+</li>
+<li>TCP:8080<ul>
+<li>HTTP (Nextcloud AIO Management)</li>
+</ul>
+</li>
+<li>TCP:8443<ul>
+<li>HTTPS (Nextcloud AIO Management)</li>
+</ul>
+</li>
+<li>TCP:9443<ul>
+<li>HTTPS (Open WebUI)</li>
+</ul>
+</li>
+<li>TCP:11000<ul>
+<li>Apache frontend</li>
+</ul>
+</li>
+</ul>
+<h2 id="network-overview">NETWORK OVERVIEW</h2>
+<table>
+<thead>
+<tr>
+<th><strong><em>Service</em></strong></th>
+<th><strong><em>Internal Port</em></strong></th>
+<th><strong><em>External Port</em></strong></th>
+<th><strong><em>Protocol</em></strong></th>
+<th><strong><em>Purpose</em></strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Nextcloud AIO Master</td>
+<td>80, 8080, 8443</td>
+<td>80, 8080, 8443</td>
+<td>HTTP/HTTPS</td>
+<td>Management interface</td>
+</tr>
+<tr>
+<td>Nextcloud AIO Apache</td>
+<td>11000</td>
+<td>-</td>
+<td>HTTP</td>
+<td>Backend (nginx proxy)</td>
+</tr>
+<tr>
+<td>Nextcloud Talk</td>
+<td>3478</td>
+<td>3478</td>
+<td>TCP/UDP</td>
+<td>STUN/TURN server</td>
+</tr>
+<tr>
+<td>Open WebUI</td>
+<td>8080</td>
+<td>3000</td>
+<td>HTTP</td>
+<td>Backend (nginx proxy)</td>
+</tr>
+<tr>
+<td>AdGuard Home DNS</td>
+<td>5354</td>
+<td>5354</td>
+<td>TCP/UDP</td>
+<td>DNS filtering</td>
+</tr>
+<tr>
+<td>AdGuard Home Web</td>
+<td>3001</td>
+<td>3001</td>
+<td>HTTP</td>
+<td>Management interface</td>
+</tr>
+<tr>
+<td>Nginx</td>
+<td>-</td>
+<td>443, 9443</td>
+<td>HTTPS</td>
+<td>Reverse proxy</td>
+</tr>
+<tr>
+<td>SSH</td>
+<td>22</td>
+<td>22</td>
+<td>TCP</td>
+<td>Remote administration</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Domain Resolution</strong></p>
+<ul>
+<li>Public Domains (using Let&#39;s Encrypt)<ul>
+<li>cloud.jumperlink.net (Nextcloud)</li>
+<li>chat.jumperlink.net (Open WebUI)</li>
+</ul>
+</li>
+<li>Internal Resolution (using AdGuard)<ul>
+<li>all domains resolve to 192.168.1.81</li>
+</ul>
+</li>
+</ul>
+<h2 id="apps-services">APPS/SERVICES</h2>
+<ul>
+<li><strong>Docker Containers</strong><ul>
+<li><strong>Nextcloud All-in-One (AIO)</strong><ul>
+<li>cloud.jumperlink.net</li>
+<li><strong>Network</strong><ul>
+<li>WAN -&gt; Router:9443 -&gt; nginx:9443 -&gt; Nextcloud AIO MC:8080 -&gt; Apache :443</li>
+<li>LAN -&gt; nginx:9443 -&gt; Nextcloud AIO MC:8080 -&gt; Apache :443</li>
+<li>traffic flow<ul>
+<li>I go to cloud.jumperlink.net and send a DNS query for cloud.jumperlink.net</li>
+<li>systemd-resolved receives query at x.81</li>
+<li>forwards to Adgaurd&#39;s port (:5354) using loopback address</li>
+<li>Adguard Home uses a DNS rewrite to send it back to x.81</li>
+<li>systemd-resolved returns .81 IP to me</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><strong>Config</strong><ul>
+<li><strong>Image</strong>: docker.io/nextcloud/all-in-one:latest</li>
+<li><strong>Nextcloud AIO (mastercontainer)</strong><ul>
+<li><strong>Configuration Volume</strong><ul>
+<li><em>remember: the mastercontainer auto-manages the docker compose. Creates and updates based on the GUI settings</em> </li>
+</ul>
+</li>
+<li>Management interface: 80 (redirects), 8080, 8443</li>
+<li>Resource limits: 4GB RAM, 2 CPU cores</li>
+<li>Controls all other Nextcloud containers</li>
+</ul>
+</li>
+<li><strong>Nextcloud AIO (apache)</strong> (172.19.0.11)<ul>
+<li>Web server frontend on port 11000</li>
+</ul>
+</li>
+<li><strong>Nextcloud AIO (nextcloud)</strong> (172.19.0.5)<ul>
+<li>Main Nextcloud application server</li>
+</ul>
+</li>
+<li><strong>Nextcloud AIO (database)</strong> (172.19.0.10)<ul>
+<li>Database server<ul>
+<li><em>PostgreSQL NOT SQLite :(</em></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><strong>Nextcloud AIO collabora</strong> (172.19.0.3)<ul>
+<li>Nextcloud Office</li>
+</ul>
+</li>
+<li><strong>Docker Compose</strong>: /srv/apps/openwebui/docker-compose.yml</li>
+</ul>
+</li>
+<li>**Containerd<ul>
+<li>located in /usr/bin/containerd</li>
+<li>foundational container runtime</li>
+<li>provides core container lifecycle management services for Docker <ul>
+<li>low level container runtime beneath Docker</li>
+<li><strong>handles...</strong><ul>
+<li>container lifecycle, image, runtime, resource &amp; plugin management</li>
+</ul>
+</li>
+<li>**Integrates with...<ul>
+<li>Docker<ul>
+<li>Primary runtime</li>
+<li>Docker daemon via /run/containerd/containerd.sock</li>
+<li>Image storage (manages all Docker images and container filesystem layers</li>
+<li>Container execution</li>
+</ul>
+</li>
+<li>systemd<ul>
+<li>service management via containerd.service</li>
+<li>automatic startup</li>
+<li>resource limits</li>
+<li>process management</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>**Installed with <ul>
+<li>Ubuntu package (containerd.io)</li>
+</ul>
+</li>
+<li><strong>Runtime root</strong><ul>
+<li>/var/lib/containerd</li>
+</ul>
+</li>
+<li>**State Directory<ul>
+<li>/run/containerd</li>
+</ul>
+</li>
+<li><strong>Configuration</strong><ul>
+<li>etc/containerd/config.toml</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><strong>Open WebUI</strong><ul>
+<li>chat.jumperlink.net</li>
+<li><strong>Network</strong><ul>
+<li>WAN -&gt; Router:9443 -&gt; nginx:9443 -&gt; Open WebUI container:3000 -&gt; container: 8080</li>
+<li>LAN -&gt; nginx:9443 -&gt; Open WebUI container: 3000 -&gt; container: 8080</li>
+<li>traffic flow<ul>
+<li>I go to chat.jumperlink.net and send a DNS query for chat.jumperlink.net</li>
+<li>systemd-resolved receives query at x.81</li>
+<li>forwards to AdGuard&#39;s port (:5354) using loopback address</li>
+<li>AdGuard Home uses a DNS rewrite to send it back to x.81</li>
+<li>systemd-resolved returns .81 IP to me</li>
+<li>nginx reverse proxies 443 to 9443 (if I used the default HTTPS port i.e. chat.jumperlink.net instead of chat.jumperlink.net:9443)</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><strong>Config</strong><ul>
+<li><strong>Image</strong>: ghcr.io/open-webui/open-webui:main</li>
+<li><strong>Resource Limits</strong>: 2GB RAM, 1.5 CPU cores</li>
+<li><strong>Docker Compose</strong>: /srv/apps/openwebui/docker-compose.yml</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><strong>Systemd Services</strong><ul>
+<li><strong>AdGuard Home (DNS Filtering)</strong><ul>
+<li>Network-level ad blocker and DNS server providing domain filtering and custom DNS resolution.</li>
+<li><strong>Network</strong><ul>
+<li>DNS Port: 5354 (TCP/UDP)</li>
+<li>UI: Port 3001</li>
+<li>Bind Address: 0.0.0.0 (all interfaces)</li>
+</ul>
+</li>
+<li><strong>Configuration</strong>:<ul>
+<li>Service Type: Systemd service (not containerized)</li>
+<li>Binary: /opt/adguardhome/AdGuardHome</li>
+<li>Working Directory: /opt/adguardhome/work</li>
+<li>Configuration: /opt/adguardhome/work/AdGuardHome.yaml</li>
+<li>User/Group: adguard:adguard</li>
+<li><strong>DNS Servers</strong>:<ul>
+<li>Systemd resolved uses AdGuard for jumperlink.net domain<ul>
+<li>Fallbacks back to: 192.168.1.254 -&gt; 1.1.1.1 -&gt; 1.0.0.1<ul>
+<li>192.168.1.254 (router)</li>
+<li>1.1.1.1 (Cloudflare)</li>
+<li>1.0.0.1 (Cloudflare)</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>Bootstrap DNS: 9.9.9.10, 149.112.112.10<ul>
+<li>allows DNS client to resolve IP addresses of DNS servers using their domain names</li>
+</ul>
+</li>
+<li>Rate Limiting: 20 queries/second per subnet</li>
+<li>Cache Size: 4 MB</li>
+<li>DNSSEC: Disabled<ul>
+<li>DNS security extension<ul>
+<li>causes problems with DNS rewrite (can&#39;t match cryptographic signature)</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>DNS64: Disabled<ul>
+<li>create AAAA from A records <ul>
+<li>(<em>to do: this needs to be enabled to setup IPv6</em>)</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><strong>Filtering</strong><ul>
+<li>Active Filters: AdGuard DNS filter (128,668 rules)</li>
+<li>Update Interval: 24 hours</li>
+<li>Query Logging: Enabled (2160 hours retention)</li>
+<li>Statistics: Enabled (24-hour intervals)</li>
+</ul>
+</li>
+<li><strong>DNS Rewrites</strong> (Internal Resolution)<ul>
+<li>cloud.jumperlink.net → 192.168.1.81</li>
+<li>chat.jumperlink.net → 192.168.1.81</li>
+</ul>
+</li>
+<li><strong>Security</strong><ul>
+<li>NoNewPrivileges<ul>
+<li>prevents container from gaining additional privileges after startup</li>
+</ul>
+</li>
+<li>PrivateTmp<ul>
+<li>creates a sandboxed/isolated  /tmp directory for AdGuard<ul>
+<li>prevents privilege escalation</li>
+<li>stops symlink attacks (attackers create malicious symlinks in /tmp to redirect AdGuard)<ul>
+<li><em>still don&#39;t understand symlinks, might be worth reading more about</em></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>ProtectHome<ul>
+<li>Whole Network</li>
+<li>blocks Ads, Protects against malware and prvents tracking by blocking scripts<ul>
+<li><em>look into configuring this more, could be cool stuff</em></li>
+</ul>
+</li>
+</ul>
+</li>
+<li>ProtectSystem<ul>
+<li>like ProtectHome, but for the Server only</li>
+</ul>
+</li>
+<li>CAP_NET_BIND_SERVICE<ul>
+<li>Allows binding to privileged ports (1-1024)</li>
+<li>enables AdGuard to listen over 53 (DNS)and 853 (DNS-over-TLS)<ul>
+<li>allows AdGuard to run non-root and use ports 1-1024</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>CAP_NET_RAW)<ul>
+<li>allows creating raw network sockets</li>
+</ul>
+</li>
+<li>RestartSEC=10<ul>
+<li>Restart policy: 10 second delay<ul>
+<li>DoS prevention (limits attack frequency), reduces log spam, easier on CPU and memory</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><strong>Nginx Reverse Proxy</strong><ul>
+<li>Web Server with SSL termination, reverse proxy and security headers</li>
+<li><strong>Config</strong><ul>
+<li><strong>SSL</strong><ul>
+<li>Let&#39;s Encrypt<ul>
+<li>provides certs for cloud and chat</li>
+<li>automatically renews</li>
+</ul>
+</li>
+<li>Protocols<ul>
+<li>TLSv1.2 &amp; TLSv1.3<ul>
+<li><em>learn more</em></li>
+</ul>
+</li>
+<li>ECDHE-based cipher suite<ul>
+<li>*figure out what this means</li>
+</ul>
+</li>
+<li>HSTS headers for forcing HTTPS</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><strong>cloud.jumperlink.net (443)</strong><ul>
+<li>Backend<ul>
+<li>127.0.0.1:11000 (Apache)</li>
+</ul>
+</li>
+<li>HTTP/2 support </li>
+<li>WebDAV for file sync</li>
+<li>16GB max file uploads</li>
+<li>Security<ul>
+<li>X-Content-Type-Options: nosniff<ul>
+<li>Prevents browser from guessing file types<ul>
+<li>blocks MIME-type confusion attacks</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>X-Frame-Options: DENY<ul>
+<li>Prevents page from being embedded in frames/iframes<ul>
+<li><em>CHANGE THIS TO ALLOW iFRAMES FOR COLLABORA AND CHAT</em><ul>
+<li><em>I think its stopping other sites from framing nextcloud, revert and look at openwebui</em></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>X-XSS-Protection: 1; mode=block<ul>
+<li>blocks pages when XSS detected</li>
+<li>enables browser&#39;s built-in XSS filter<ul>
+<li><em>read this is obsolite, do I turn it off? left on for now, research</em></li>
+</ul>
+</li>
+</ul>
+</li>
+<li>Strict-Transport-Security: max-age=63072000<ul>
+<li>forces HTTPS connections (expires in 2 years)<ul>
+<li><em>I don&#39;t understand what expiring means, does it renew? do I do something? research</em></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><strong>chat.jumperlink.net (443 -&gt; 9443)</strong><ul>
+<li>backend<ul>
+<li>127.0.0.1:3000</li>
+</ul>
+</li>
+<li>443 -redirects-&gt; 9443</li>
+<li>WebSocket support for real-time chat<ul>
+<li><em>this is what&#39;s breaking in LAN!</em></li>
+<li>*patched with...<ul>
+<li>*proxy_set_header Upgrade $http_upgrade;</li>
+<li>*proxy_set_header Connection &quot;upgrade&quot;;<ul>
+<li><em>tracking Github issue for OpenWebUI fix</em></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><p><strong>Cron Jobs</strong></p>
+<ul>
+<li><strong>/etc/cron</strong><ul>
+<li>Contains system-wide cron configuration files</li>
+</ul>
+</li>
+<li><strong>/etc/crontab</strong> (cron job scheduling management)</li>
+<li><strong>/etc/cron.d</strong> (cron jobs installed by packages)<ul>
+<li>/anacron (Handles missed jobs (when server is off)</li>
+<li>/certbot (certbot stuff | daily3:30am)</li>
+<li>/e2scrup_all (schedules filesystem integrity checking )<ul>
+<li>e2scrup (utility for filesystem corruption detection and repair (ext4 only))</li>
+</ul>
+</li>
+<li>/ntpsec (manages Network Time Protocol stat files | daily 6:25am)</li>
+<li>/sysstat (system performance data collection | daily 11:59pm)</li>
+</ul>
+</li>
+<li><strong>etc/cron.hourly, .daily, .weekly, .monthly</strong> (self explainitory)<ul>
+<li><code>crontab -e</code> (manage user crontabs, template for syntax)</li>
+</ul>
+</li>
+<li>**certbot.timer<ul>
+<li>checks for SSL certificates to be &lt; 30 from expiring<ul>
+<li>triggers certbot.service when &lt;30 = true</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>**apt-daily.timer<ul>
+<li>apt package updates</li>
+</ul>
+</li>
+<li><p>**logrotate.timer</p>
+<ul>
+<li>manages log files</li>
+</ul>
+</li>
+<li><p><strong>/var/spool/cron/crontabs/ejumps</strong></p>
+<ul>
+<li>user crontab (where my docker crons are)<ul>
+<li>`<em>/5 </em> <em> </em> * /usr/local/bin/container-health-monitor.sh &gt; /dev/null 2&gt;&amp;1<ul>
+<li>monitors docker health (every 5 minutes), restarts failed containers, sends alerts</li>
+</ul>
+</li>
+<li><code>0 3 * * 0 docker system prune -f &gt; /dev/null 2&gt;&amp;1</code><ul>
+<li>removes unused containers, networks, images, cache, etc. every Sunday at 3:00am</li>
+</ul>
+</li>
+<li><code>0 2 * * 0 /usr/local/bin/backup-containers.sh &gt; /dev/null 2&gt;&amp;1</code><ul>
+<li>creates backups of container configurations and data at Sundays at 2:00am<ul>
+<li>runs before docker cleanup, ensures new backups before removing unused resources</li>
+</ul>
+</li>
+<li>enables restoration after system failure</li>
+<li>maintains snapshot of container states</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>**Cron dependencies</li>
+<li>**cron.service<ul>
+<li>runs under systemd</li>
+</ul>
+</li>
+<li>**Anacron<ul>
+<li>Handles missed jobs (when server is off)</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<h2 id="security">SECURITY</h2>
+<ul>
+<li><p><strong>To Do</strong></p>
+<ul>
+<li>fail2ban for SSH</li>
+<li>Wireguard for SSH</li>
+<li>password policy</li>
+<li>log monitoring alerts to mail</li>
+<li>monitor resource usage</li>
+<li>audit open ports</li>
+</ul>
+</li>
+<li><p><strong>UFW Firewall</strong></p>
+<ul>
+<li>**Default Policies<ul>
+<li>Incoming: DENY</li>
+<li>Outgoing: ALLOW</li>
+<li>Routed: DENY</li>
+</ul>
+</li>
+<li><em>*Allowed </em>Incoming* Ports<ul>
+<li>22/tcp (SSH)</li>
+<li>80/tcp (HTTP - redirects to HTTPS)</li>
+<li>443/tcp (HTTPS)</li>
+<li>8080/tcp (Nextcloud AIO management)</li>
+<li>8443/tcp (Nextcloud AIO management SSL)</li>
+<li>9443/tcp (Open WebUI SSL)<ul>
+<li>Logging @ /var/log/ufw.log</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><strong>IPTables</strong><ul>
+<li><strong>Config</strong><ul>
+<li>Default DROP policy for INPUT and FORWARD chains<ul>
+<li>deny by default (drops all incoming traffic unless explicitly allowed)</li>
+<li>drops all traffic passing <em>through</em> the system</li>
+</ul>
+</li>
+<li>UFW-managed rules with comprehensive logging<ul>
+<li>UFW creates iptable rules automatically with built in logging</li>
+</ul>
+</li>
+<li>Docker integration with proper container isolation<ul>
+<li>UFW rules apply -&gt; docker rules apply after UFW<ul>
+<li>prevents containers from bypassing UFW firewall rules</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>Connection tracking for established connections<ul>
+<li>conntrack tracks connection states (new, established, related)</li>
+<li>allows return traffic for outbound connections autmatically</li>
+<li>allows FTP data</li>
+</ul>
+</li>
+<li>Rate limiting on blocked connection logging<ul>
+<li>prevents log flooding from repeated blocked attempts</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><strong>SSH</strong><ul>
+<li><strong>config</strong> (default Ubuntu config)<ul>
+<li>:22 by default</li>
+<li>root is password protected</li>
+<li>public key authentication enabled</li>
+<li>max authentication attempts: 6</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><strong>SSL/TLS</strong><ul>
+<li>Let&#39;s Encrypt<ul>
+<li>Automated Certificate authority</li>
+<li>Issues trusted SSL certificates every 90 days</li>
+<li>requires domain validation to prove domain ownership</li>
+<li>provides certs for cloud and chat<ul>
+<li>automatically renews</li>
+</ul>
+</li>
+<li>Protocols<ul>
+<li>TLSv1.2 &amp; TLSv1.3<ul>
+<li><em>learn more</em></li>
+</ul>
+</li>
+<li>ECDHE-based cipher suite<ul>
+<li><em>figure out what this means</em></li>
+</ul>
+</li>
+<li>HSTS headers for forcing HTTPS</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>Certbot (ACME client)<ul>
+<li>talks to Let&#39;s Encrypt from my server</li>
+<li>handles certificate requests, renewals and storage</li>
+<li>uses ACME protocol to commenicate with Let&#39;s Encrypt</li>
+</ul>
+</li>
+<li><strong>SSL Certificate Management</strong><ul>
+<li>Initial Certificate Process (How I got my first certs)<ol>
+<li>Certificate request<ul>
+<li>certbot --nginx -d chat.jumperlink<ul>
+<li>certbot: contacts Let&#39;s Encrypt, asks for certs for subdomain</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>HTTP-01 Challenge<ul>
+<li>Let&#39;s Encrypt: responds with HTTP-01 challenge to make certbot prove I own this domain<ul>
+<li>Let&#39;s Encrypt generates a random token and sends it to certbot</li>
+<li>certbot creates... <ul>
+<li>/var/www/html/.well-known/acme-challenge/\<token></li>
+<li>and places proof of ownership in that file (<em>how is proof shown</em>)</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>Let&#39;s Encrypt External Validation<ul>
+<li>Let&#39;s Encrypt&#39;s Queries the domain&#39;s DNS provider<ul>
+<li>Cloudflare responds with my public IP</li>
+</ul>
+</li>
+<li>Let&#39;s Encrypt sends an HTTP request to the public IP Cloudflare provided</li>
+<li>Since I am the site owner the request reaches port 80 on my router<ul>
+<li>I have configured port 80 to forward traffic to 192.168.1.81 (my server)</li>
+</ul>
+</li>
+<li>nginx finds the token in /var/www/html/.well-known/acme-challenge/\<token><ul>
+<li>and serves the challenge file back to the Let&#39;s Encrypt server that sent the HTTP request</li>
+</ul>
+</li>
+<li>Let&#39;s Encrypt compares the responses, if they match it proves I own the domain.</li>
+</ul>
+</li>
+<li>Let&#39;s Encrypt sends me the certificate<ul>
+<li>certbot downloads and installs the certificate in /etc/letsencript/live/</li>
+<li>nginx is configured to use the latest certificate</li>
+</ul>
+</li>
+</ol>
+</li>
+<li>Certificate Renewal Process<ol>
+<li>certbot.timer checks the certificate twice daily<ul>
+<li>if the certificate expires in &lt; 30 days<ul>
+<li>it triggers certbot.service to initiate the &quot;Initial Certificate Process&quot;<ol>
+<li>Contact Let&#39;s Encrypt</li>
+<li>HTTP-01 Challenge with new token</li>
+<li>Let&#39;s Encrypt queries cloudflare for my public IP</li>
+<li>Let&#39;s Encrypt sends HTTP request to the IP provided</li>
+<li>My server responds and Let&#39;s Encript sends me a new cert</li>
+</ol>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ol>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<h2 id="backups">BACKUPS</h2>
+<ul>
+<li>weekly differential backups to  /home/ejumps/backups<ul>
+<li>critical data only (docker-compose, file volumes, etc.)</li>
+<li>*immediate plan: weekly differential backups to desktop HDD</li>
+<li>*future plan: <ul>
+<li>*External SSD for daily differential backups<ul>
+<li>*use 2.5&quot; when you upgrade linux to an M.2</li>
+</ul>
+</li>
+<li>*Monthy AWS S3 Iceburg differential backups<ul>
+<li><em>look into full backups but seems like overkill for what I need</em></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<h2 id="monitoring-maintenance">MONITORING/MAINTENANCE</h2>
+<ul>
+<li><strong>logging</strong><ul>
+<li>Nginx @ /var/log/nginx</li>
+<li>AdGuard @ systemd journal</li>
+<li>Docker <ul>
+<li>View logs for a specific container @<ul>
+<li><code>docker logs &lt;container_name_or_id&gt;</code><ul>
+<li>open-webui, nextcloud-aio-nextcloud</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>Follow logs in real-time (like tail -f) @<ul>
+<li><code>docker logs -f &lt;container_name&gt;</code></li>
+</ul>
+</li>
+<li>Show last N lines<ul>
+<li>`docker logs --tail 50 <container_name></li>
+</ul>
+</li>
+<li>Show logs with timestamps<ul>
+<li>`docker logs -t <container_name></li>
+</ul>
+</li>
+<li>Show logs from specific time @<ul>
+<li>`docker logs --since &quot;2023-08-24T10:00:00&quot; <container_name></li>
+</ul>
+</li>
+<li>Save logs to file<ul>
+<li>`docker logs open-webui &gt; openwebui.log 2&gt;&amp;1</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>UFW @ /var/log/ufw.log</li>
+</ul>
+</li>
+<li><strong>health checks</strong><ul>
+<li><strong>Docker</strong> integrated health checks<ul>
+<li>`docker ps <ul>
+<li>shows container health status</li>
+</ul>
+</li>
+<li>`docker inspect \<container> <ul>
+<li>detailed health check results</li>
+</ul>
+</li>
+<li><em>containers auto-restart when health checks fail</em></li>
+</ul>
+</li>
+<li><strong>Systemd</strong> Service monitoring for AdGuard Home<ul>
+<li>`systemctl status adguardhome <ul>
+<li>current service status</li>
+</ul>
+</li>
+<li>`journalctl -u adguardhome -f <ul>
+<li>follow service logs</li>
+</ul>
+</li>
+<li><em>Systemd automatically restarts on failure (RestartSec=10)</em></li>
+</ul>
+</li>
+<li><strong>Nginx</strong> configuration testing<ul>
+<li>`nginx -t <ul>
+<li>test config syntax before applying</li>
+</ul>
+</li>
+<li>`systemctl reload nginx <ul>
+<li>reload config without downtime</li>
+</ul>
+</li>
+<li>`nginx -T - dump full configuration for debugging</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><strong>Management</strong><ul>
+<li>Nextcloud AIO<ul>
+<li>Web Interface: <a href="https://cloud.jumperlink.net:8080">https://cloud.jumperlink.net:8080</a></li>
+</ul>
+</li>
+<li>Open WebUI<ul>
+<li>Docker Compose: /srv/apps/openwebui/</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><strong>System Services</strong><ul>
+<li><code>systemctl</code></li>
+</ul>
+</li>
+<li><strong>Configuration Files</strong><ul>
+<li>Nginx: <code>/etc/nginx/sites-available/</code></li>
+<li>AdGuard Home: <code>/opt/adguardhome/work/AdGuardHome.yaml</code></li>
+<li>Open WebUI: <code>/srv/apps/openwebui/docker-compose.yml</code></li>
+<li>SSL Certificates: <code>/etc/letsencrypt/live/</code></li>
+</ul>
+</li>
+<li><strong>Updates</strong><ul>
+<li><strong>Automated</strong><ul>
+<li>System packages: Unattended upgrades service</li>
+<li>Let&#39;s Encrypt certificates: Automatic renewal</li>
+<li>AdGuard Home filter updates (automatic daily) </li>
+<li>System log rotation (automatic)</li>
+</ul>
+</li>
+<li><strong>Manual</strong><ul>
+<li>Docker images: Manual update required</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<h2 id="troubleshooting-notes">TROUBLESHOOTING NOTES</h2>
+<ul>
+<li>SSL Certificate Problems<ul>
+<li>Certificates located in <code>/etc/letsencrypt/live/</code></li>
+<li>Nginx configuration test: <code>nginx -t</code></li>
+<li>Certificate renewal: automatic via cron (certbot)</li>
+</ul>
+</li>
+<li><strong>DNS Resolution Issues</strong>:<ul>
+<li>AdGuard Home status: <code>systemctl status adguardhome</code></li>
+<li>DNS test: <code>nslookup domain 127.0.0.1 -port=5354</code></li>
+<li>Configuration: <code>/opt/adguardhome/work/AdGuardHome.yaml</code></li>
+</ul>
+</li>
+<li><strong>Container Issues</strong>:<ul>
+<li>Docker status: <code>docker ps -a</code></li>
+<li>Container logs: <code>docker logs [container-name]</code></li>
+<li>Resource usage: <code>docker stats</code></li>
+</ul>
+</li>
+</ul>
+<h2 id="directory-guide">Directory Guide</h2>
+<ul>
+<li><strong>Nginx</strong><ul>
+<li><code>/etc/nginx/</code> <ul>
+<li>`/etc/nginx/sites-available<ul>
+<li><code>/chat.jumperlink.net.conf</code></li>
+<li><code>/cloud.jumperlink.net.conf</code></li>
+<li><code>/office.jumperlink.net.conf.backup</code></li>
+</ul>
+</li>
+<li><code>/etc/nginx/sites-enabled/</code></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><strong>Docker Configuration</strong> <ul>
+<li><code>/etc/docker</code><ul>
+<li><code>/daemon.json</code></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><strong>Let&#39;s Encrypt SSL Certification</strong><ul>
+<li>`/etc/letsencrypt<ul>
+<li><code>/cli.ini</code></li>
+<li><code>/ssl-dhparams.pem</code></li>
+<li><code>/options-ssl-nginx.conf</code></li>
+<li><code>/renewal/chat.jumperlink.net.conf</code></li>
+<li><code>/renewal/cloud.jumperlink.net.conf</code></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><strong>Systemd Service</strong><ul>
+<li>`/etc/systemd<ul>
+<li><code>/resolved.conf.d/adguard-dns.conf</code></li>
+<li><code>/system/adguardhome.service</code></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><strong>Cron Jobs</strong><ul>
+<li><code>/etc/cron.d/</code> (directory containing cron job files)</li>
+<li><code>/etc/crontab</code> (main cron configuration)</li>
+</ul>
+</li>
+<li><strong>Default Service Configurations</strong><ul>
+<li><code>/etc/default/docker</code> (Docker default configuration)</li>
+</ul>
+</li>
+<li><strong>Optional Software</strong><ul>
+<li><strong>AdGuard Home</strong><ul>
+<li><code>/opt/adguardhome/</code> </li>
+<li><code>/opt/adguardhome/AdGuardHome</code> (binary)</li>
+<li><code>/opt/adguardhome/work/AdGuardHome.yaml</code></li>
+<li><code>/opt/adguardhome/work/AdGuardHome.yaml.backup</code></li>
+<li><code>/opt/adguardhome/work/AdGuardHome.yaml.temp</code></li>
+<li><code>/opt/adguardhome/work/data/</code> (data directory)</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><strong>Containerd</strong><ul>
+<li><code>/opt/containerd/</code> (container runtime)</li>
+</ul>
+</li>
+<li><strong>/usr/local/ - Locally Installed Scripts</strong><ul>
+<li>**Custom Scripts<ul>
+<li><code>/usr/local/bin/backup-containers.sh</code></li>
+<li><code>/usr/local/bin/container-health-monitor.sh</code></li>
+<li><code>/usr/local/bin/system-startup-check.sh</code></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><strong>/var/ (Variable Data and Logs)</strong><ul>
+<li>**Docker Data<ul>
+<li><code>/var/lib/docker/</code> (Docker volumes and container data)</li>
+<li><code>/var/lib/containerd/</code> (Containerd data)</li>
+</ul>
+</li>
+<li>**Service Logs<ul>
+<li><code>/var/log/nginx/</code> (Nginx access and error logs)</li>
+<li><code>/var/log/letsencrypt/</code> (SSL certificate logs)</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>**System Logs (relevant entries)<ul>
+<li><code>/var/log/syslog</code> (system messages)</li>
+<li><code>/var/log/auth.log</code> (authentication logs)</li>
+</ul>
+</li>
+<li>**/srv/ - Service Data<ul>
+<li>**Application Services</li>
+<li><code>/srv/apps/</code> </li>
+<li><code>/srv/apps/collabora/docker-compose.yml</code></li>
+<li><code>/srv/apps/nextcloud/</code> (Nextcloud application data)</li>
+<li><code>/srv/apps/openwebui/docker-compose.yml</code></li>
+<li><code>/srv/apps/openwebui/searxng/settings.yml</code></li>
+<li><code>/srv/apps/librechat/</code> (LibreChat no longer used)</li>
+</ul>
+</li>
+<li><strong>/home/ejumps/ - User Configuration and Repositories</strong><ul>
+<li>**Documentation<ul>
+<li><code>/home/ejumps/home-server-documentation.md</code></li>
+<li><code>/home/ejumps/git-quick-reference.md</code></li>
+</ul>
+</li>
+</ul>
+</li>
+<li>**Code Transfer Documentation<ul>
+<li><code>/home/ejumps/code_transfer/</code> </li>
+<li><code>/home/ejumps/code_transfer/LAN_ACCESS_SETUP.md</code></li>
+<li><code>/home/ejumps/code_transfer/nextcloud_nat_resolution.md</code></li>
+<li><code>/home/ejumps/code_transfer/openwebui-wan-setup-progress.md</code></li>
+</ul>
+</li>
+<li>**User Copy of System Configurations<ul>
+<li><code>/home/ejumps/etc/</code> (entire directory - backup copies)</li>
+<li><code>/home/ejumps/etc/letsencrypt/renewal/</code></li>
+<li><code>/home/ejumps/etc/nginx/sites-available/</code></li>
+<li><code>/home/ejumps/etc/systemd/resolved.conf.d/adguard-dns.conf</code></li>
+<li><code>/home/ejumps/etc/systemd/system/adguardhome.service</code></li>
+</ul>
+</li>
+<li>**GitHub Repositories<ul>
+<li><code>/home/ejumps/github-repos/</code> </li>
+<li><code>/home/ejumps/github-repos/README.md</code></li>
+<li><code>/home/ejumps/github-repos/homeserver-collabora-office/</code> </li>
+<li><code>/home/ejumps/github-repos/homeserver-infrastructure/</code> </li>
+<li><code>/home/ejumps/github-repos/homeserver-nextcloud-aio/</code>   </li>
+<li><code>/home/ejumps/github-repos/homeserver-open-webui/</code> </li>
+<li><code>/home/ejumps/github-repos/setup-homeserver.sh</code></li>
+</ul>
+</li>
+<li>**Setup and Configuration Scripts<ul>
+<li><code>/home/ejumps/git-setup-repos.sh</code></li>
+<li><code>/home/ejumps/screenshot_openwebui.js</code></li>
+</ul>
+</li>
+<li>**OpenWebUI Setup<ul>
+<li><code>/home/ejumps/openwebui-setup/</code> </li>
+</ul>
+</li>
+<li>**Backup Directory<ul>
+<li><code>/home/ejumps/backups/</code> </li>
+<li><code>/home/ejumps/backups/nextcloud-db.sql.gz</code></li>
+<li><code>/home/ejumps/backups/nextcloud_aio_apache.tar.gz</code></li>
+<li><code>/home/ejumps/backups/nextcloud_aio_mastercontainer.tar.gz</code></li>
+<li><code>/home/ejumps/backups/nextcloud_aio_redis.tar.gz</code></li>
+<li><code>/home/ejumps/backups/system-configs.tar.gz</code></li>
+</ul>
+</li>
+<li>**Node.js Project Files<ul>
+<li><code>/home/ejumps/package.json</code></li>
+<li><code>/home/ejumps/package-lock.json</code></li>
+<li><code>/home/ejumps/node_modules/</code> (Node.js dependencies)</li>
+</ul>
+</li>
+<li>**Screenshots and Media<ul>
+<li><code>/home/ejumps/openwebui_desktop.png</code></li>
+<li><code>/home/ejumps/openwebui_mobile.png</code></li>
+</ul>
+</li>
+</ul>

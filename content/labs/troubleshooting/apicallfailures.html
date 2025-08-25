@@ -1,0 +1,71 @@
+<p>When I try to prompt models on Open WebUI from within my LAN I get...
+<code>JSON.parse: unexpected character at line 1 column 1 of the JSON data</code> Everything works fine with my VPN enabled, so my immediate assumption is that this is an issue with nginx&#39;s reverse proxying. I could (and have been) auto-enable the VPN and use safari&#39;s private relay for both my mobile and desktop web apps, but that&#39;s not very elegant so I want to try and solve this. The strange thing is nothing is going on with Nextcloud and that has a very similar setup. The page is loading, I just can&#39;t send messages, but that could be a cache thing. I was not confident in my nginx implementation and had a lot of trouble getting it to work for Open WebUI so I want to go ahead and investigate that first. 
+So I go to Open WebUI&#39;s domain configuration...
+<img class="blog-img" src="content/labs/images/Pasted%20image%2020250823215147.png" alt="Pasted image 20250823215147">
+nginx is listening on 9443 which is correct... 
+<img class="blog-img" src="content/labs/images/Pasted%20image%2020250823215508.png" alt="Pasted image 20250823215508">
+I go to the &quot;LAN section&quot;
+<img class="blog-img" src="content/labs/images/Pasted%20image%2020250823222851.png" alt="Pasted image 20250823222851">
+But its configured to redirect to 9443, and it mirrors the main server block for internal network access so it should be bypassing external DNS just fine</p>
+<p>I take a step back, I jumped to blame nginx and I shouldn&#39;t have made that assumption without evidence. Here is what I know:</p>
+<ul>
+<li>The page actually loads fine, I thought it was loading from cache, but a hard refresh shows that&#39;s not true. </li>
+<li>The actual problem is with JSON parsing which doesn&#39;t really indicate a network error directly.</li>
+<li>Because it works fine when using a VPN but not when the problem is probably with nginx, but it probably is a granular configuration error, not a failure to bypass external DNS</li>
+<li>Things I need to investigate, what JSON is actually being parsed here? Is my prompt that&#39;s failing to be sent? That would make the most sense, its timing out the request before giving me the JSON error, and I have the proxy_send_timeout set to 300 seconds but I also have the read timeout set to 300, I don&#39;t think its a connection problem, but that also has a timeout so maybe there&#39;s a JSON file that configures the connection?
+I think its best to dig into the Docker logs next and see if there&#39;s any information on what&#39;s going wrong. </li>
+</ul>
+<p>I peruse the man docker file to find the right command to use... 
+<img class="blog-img" src="content/labs/images/Pasted%20image%2020250823224300.png" alt="Pasted image 20250823224300">
+<img class="blog-img" src="content/labs/images/Pasted%20image%2020250823225348.png" alt="Pasted image 20250823225348">
+I spend a bit of time here trying to parse what everything means, but I get to api/v1/folders/HTTP/1.1&quot;200 </p>
+<ul>
+<li>api/v1 (that looks like its referencing my openAI formatted API) and a 200 message is always a good thing.
+So now I believe that the messages are coming in, which just confuses me more.
+<img class="blog-img" src="content/labs/images/Pasted%20image%2020250823230242.png" alt="Pasted image 20250823230242">
+I paste the logs into a text editor and just try searching for the word error and this works! I try searching it and starting reading but while I&#39;m learning a lot about python errors, I feel like I&#39;m not getting any closer to understanding.</li>
+</ul>
+<p>I eventually decide to do what I probably should have done first, just curl the api and see what it returns.
+<img class="blog-img" src="content/labs/images/Pasted%20image%2020250823231045.png" alt="Pasted image 20250823231045">
+The first thing I notice is I could have saved a lot of time if I&#39;d just tried this first, I see the HTTP 200 message, and that nginx is clearly reverse proxying the request correctly. The only suspicious thing I see here is that I&#39;m getting HTML. Here&#39;s my theory, if I&#39;m getting an unexpected JSON error at line 1, maybe nginx is somehow mangling passing a JSON file Open WebUI needs from the API into an HTML file.</p>
+<p>I decide I need to see what that html file contains.
+I go through the man page for curl and don&#39;t find anything useful but after searching online I eventually find the head command, which should let me see the contents of what&#39;s being sent when combined with curl.
+<img class="blog-img" src="content/labs/images/Pasted%20image%2020250823233431.png" alt="Pasted image 20250823233431">
+I see that its HTML, which isn&#39;t news, and a not authenticated error.
+This is confusing because it would make sense that if Open WebUI isn&#39;t able to authenticate I wouldn&#39;t be able to get the messages the API is sending, but I still don&#39;t understand why its getting HTML?
+I&#39;m going to ignore the HTML for now and focus on the fact that this has something to do with nginx and authentication. My head first went to Open WebUI authentication, but then I had anther thought...</p>
+<ul>
+<li>nginx is the SSL termination point. It handles the SSL/TLS encription and decryption for Let&#39;s Encrypt.</li>
+<li>I think that the not authenticated error is a symptom of the SSL handshake failing.
+I kind of don&#39;t know what to do with that information and just start searching the web, I didn&#39;t see anything really relevant, but it did remind me of something I should have thought to do at the beginning, CHECK THE BROWSER CONSOLE!
+<img class="blog-img" src="content/labs/images/Pasted%20image%2020250824001322.png" alt="Pasted image 20250824001322">
+I&#39;ve never been so happy to see so many errors!
+I click on &quot;Learn More&quot; and suddenly all the information I need is right in front of me in a mozilla doc! 
+What I found...</li>
+<li>the issue isn&#39;t authentication, it&#39;s that that websocket connection isn&#39;t working and Socket.IO can&#39;t establish a wss:// connection</li>
+<li>&quot;The source map data can be invalid — either not a JSON file at all, or with an incorrect structure. Typical error messages here are: - <code>SyntaxError: JSON.parse: unexpected character at line 1 column 1 of the JSON data</code>&quot;
+I do a quick ctrl+f in my obsidian vault where I keep all the documentation for my server and I can see my notes on setting up WebSocket, I go to /etc/nginx/sites-available/chat.jumperlink.net.conf and unfortunately Websocket support is configured perfectly, which I guess I should have expected since it works for external connections.</li>
+</ul>
+<p>Here&#39;s the question: Why does WebSockets behave differently for internal and external connections. Why doesn&#39;t Nextcloud have websocket connection problems locally, it is also proxying to 192.168.1.81 and things I have set up like streaming video should require the same real time functionality that Open WebUi is failing on, shouldn&#39;t they?</p>
+<p>Here&#39;s my next idea. </p>
+<ul>
+<li>I&#39;m going to go t the Open WebUI nginx documentation and check that I set everything up correctly. </li>
+<li>I&#39;m going to search github for known issues with Open WebUI. </li>
+</ul>
+<p>I FOUND IT! as soon as I searched GitHub for known issues I was flooded with people who had the same problem as me! This is a known problem with Open WebUI and there is a fix.
+<img class="blog-img" src="content/labs/images/Pasted%20image%2020250824175222.png" alt="Pasted image 20250824175222">
+I head to /etc/nginx/sites-available/chat.jumperlink.net.conf
+<img class="blog-img" src="content/labs/images/Pasted%20image%2020250824175909.png" alt="Pasted image 20250824175909">
+I have a new problem now, I recently installed the kitty terminal emulator and its causing problems using nano over ssh
+<img class="blog-img" src="content/labs/images/Pasted%20image%2020250824180410.png" alt="Pasted image 20250824180410">
+A few more errors later and I decide to just switch to Konsole and I&#39;ll deal with Kitty problems later.
+<img class="blog-img" src="content/labs/images/Pasted%20image%2020250824180948.png" alt="Pasted image 20250824180948">
+I save and test and everything works now!
+<img class="blog-img" src="content/labs/images/Pasted%20image%2020250824181355.png" alt="Pasted image 20250824181355"></p>
+<p>Takeaways: </p>
+<ul>
+<li>The browser console is my friend!</li>
+<li>Always refer to official documentation before troubleshooting. </li>
+<li>Check GitHub for known bugs, you probably aren&#39;t the first person to have a problem.</li>
+<li>Post problems and solutions to GitHub issues, it might save someone time.</li>
+</ul>

@@ -1,0 +1,452 @@
+<p>Since I had already created my home server by the time I decided to begin documenting the implementation of my various home lab projects, I am not able to provide the step by step process I took to create it. I did, however, create thorough documentation on the setup I have created for my own education and future reference, and have continuously updated them to match any changes. I have made documents for almost every service, configuration and application on my server. The file below serves as an example of my documentation on one such service. I believe it is a testament to my dedication to learning my servers system, configuring it in a reliable and secure way, and ensuring I am able to competently administer it. </p>
+<h2 id="systemd">Systemd</h2>
+<p><em>Central &quot;orchestrator&quot; for server environment</em></p>
+<ul>
+<li>Daemon that <strong>manages system</strong> and services<ul>
+<li>Controls <strong>startup &amp; shutdown</strong> for services</li>
+<li>controls <strong>CPU</strong>, <strong>memory</strong> and <strong>I/O limits</strong> for services</li>
+<li>handles <strong>DNS resolution</strong> </li>
+<li>handles <strong>scheduled tasks</strong> (can replace cron)</li>
+<li><strong>logging</strong> through journald</li>
+<li><strong>isoltates services</strong> and implaments <strong>security policies</strong></li>
+</ul>
+</li>
+<li>Systemd-resolved<ul>
+<li>forwards jumperlink domain queries to AdGuard</li>
+<li>acts as local DNS proxy/forwarder</li>
+</ul>
+</li>
+<li>systemd socket activation<ul>
+<li>only starts services when they&#39;re needed<ul>
+<li>listens on a socket and activates on incoming connections</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>NetworkManager<ul>
+<li>Network interface management</li>
+</ul>
+</li>
+<li>nginx<ul>
+<li>web server (starts dependencies automatically)</li>
+</ul>
+</li>
+<li>securite<ul>
+<li>UFW, SSH, SSL Certificate Management (Certbot timer)</li>
+</ul>
+</li>
+</ul>
+<h2 id="service-startup-order">Service Startup Order</h2>
+<ul>
+<li>System -&gt; Network -&gt; AdGuard Home -&gt; systemd-resolved -&gt; Apps</li>
+</ul>
+<h2 id="etc-systemd-">etc/systemd/</h2>
+<p>system-wide configuration files</p>
+<h2 id="etc-systemd-system">etc/systemd/system</h2>
+<ul>
+<li>service unit files</li>
+<li>overrides and local modifications</li>
+<li><em>need to finish documenting</em><h2 id="etc-systemd-resolved-conf-d-">etc/systemd/resolved.conf.d/</h2>
+</li>
+<li>DNS resolution configuration overrides</li>
+<li>AdGuard Home uses for domain-specific resolution</li>
+<li>FALLBACK DNS SERVER CONFIGURATION</li>
+<li>integrates systemd-resolved with adguard home <ul>
+<li>provies DNS resolution</li>
+<li>ensures jumperlink is resolved through AdGuard</li>
+</ul>
+</li>
+<li>Configuration<ul>
+<li>[Resolve]</li>
+<li>DNS=127.0.0.1:5354 (loopback address with AdGuard port)</li>
+<li>Domains=~jumperlink.net</li>
+</ul>
+</li>
+<li>traffic flow<ul>
+<li>I go to cloud.jumperlink.net and send a DNS query for cloud.jumperlink.net</li>
+<li>systemd-resolved receives query at x.81</li>
+<li>forwards to Adgaurd&#39;s port (:5354) using loopback address</li>
+<li>Adguard Home uses a DNS rewrite to send it back to x.81</li>
+<li>systemd-resolved returns .81 IP to me</li>
+</ul>
+</li>
+</ul>
+<h2 id="systemd-services">Systemd Services</h2>
+<h2 id="etc-systemd-adguardhome-service">etc/systemd/adguardhome.service</h2>
+<ul>
+<li><strong>AdGuard Home</strong><ul>
+<li>DNS filtering</li>
+<li>Starts after network but before DNS lookup</li>
+<li>Security (Least Privledge) </li>
+</ul>
+</li>
+<li><strong>NonewPrivileges=yes</strong><ul>
+<li>Prevents privilege escalation <ul>
+<li>uses execve() <em>learn more about this</em></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><strong>PrivateTmp=yes</strong><ul>
+<li>to isolate from other processes</li>
+</ul>
+</li>
+<li><strong>ProtectHome=yes</strong><ul>
+<li>blocks access to /home, /root, /run/user, etc.</li>
+</ul>
+</li>
+<li><strong>ProtectSystem=strict</strong><ul>
+<li>Makes read-only except for /dev, /proc &amp; /sys<ul>
+<li>opt/adguardhome/work (writable)</li>
+<li>opt/adguardhome/conf (writable)</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><strong>CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_NET_RAW</strong><ul>
+<li>limits to...<ul>
+<li>CAP_NET_BIND_SERVICE <ul>
+<li>binds port to DNS <ul>
+<li>lets me bind to &quot;privileged ports&quot; (1-1023) without being root (letting AdGuard run as root is a security risk)</li>
+<li>lets AdGuard bind to :5354 for DNS<ul>
+<li>fixed conflicts with systemd-resolved (was also using 53)<ul>
+<li>systemd-resolved forwards to jumperlink domain queries to AdGuard</li>
+</ul>
+</li>
+<li>bound Collabora Office on :3001</li>
+<li></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>CAP_NET_RAW <ul>
+<li>Creates &quot;raw sockets&quot; <ul>
+<li>bypass TCP, allows direct access to low level network protocols</li>
+<li>creates custom packet headers, direct &quot;link layer&quot; access</li>
+</ul>
+</li>
+<li>Used for <ul>
+<li>ICMP (for ping)</li>
+<li>speeds up DNS </li>
+<li>packet inspection</li>
+<li>inables routing functionality<ul>
+<li>AmbientCapabilities=CAP_NET_BIND_SERVICE CAP_NET_RAW</li>
+<li>Inherits these capabilities after dropping root</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><strong>DNS</strong><ul>
+<li>DNS=127.0.0.1:5354 (link local address for routing to AdGuard port)</li>
+<li>Domains=~jumperlink.net (~ means all subdomains)</li>
+<li>FallbackDNS=192.168.1.254 1.1.1.1 1.0.0.1 (falls back on local router, Cloudflare DNS, and a different cloudflare DNS)</li>
+<li>What this looks like<ul>
+<li>App request -&gt; systemd-resolved -&gt; AdGuard Home -&gt; response</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>**Troubleshooting<ul>
+<li>Show current systemd-resolved status<ul>
+<li>systemctl status systemd-resolved</li>
+</ul>
+</li>
+<li>display active DNS servers<ul>
+<li>resolvectl status</li>
+</ul>
+</li>
+<li>Show domain-specific routing<ul>
+<li>resolvectl dns</li>
+</ul>
+</li>
+<li>test domain resolution<ul>
+<li>resolvectl query chat.jumperlink.net</li>
+<li>resolvectl query google.com</li>
+</ul>
+</li>
+<li>backup configuration<ul>
+<li>sudo cp /etc/systemd/resolved.conf.d/adguard-dns.conf /etc/systemd/resolved.conf.d/adguard-dns.conf.backup-$(date +%Y%m%d-%H%M%S)</li>
+</ul>
+</li>
+<li>edit config<ul>
+<li>sudo nano /etc/systemd/resolved.conf.d/adguard-dns.conf</li>
+</ul>
+</li>
+<li>apply changes<ul>
+<li>sudo systemctl restart systemd-resolved</li>
+</ul>
+</li>
+<li>verify configuration<ul>
+<li>resolvectl status</li>
+</ul>
+</li>
+<li>testing DNS resolution<ul>
+<li>dig @127.0.0.1 -p 5354 chat.jumperlink.net</li>
+</ul>
+</li>
+<li>Test external domain resolution (should use fallback)<ul>
+<li>dig google.com</li>
+</ul>
+</li>
+<li>Test with specific resolver<ul>
+<li>nslookup chat.jumperlink.net 127.0.0.1</li>
+</ul>
+</li>
+<li>Monitor DNS queries in AdGuard Home logs<ul>
+<li>sudo journalctl -u adguardhome -f | grep &quot;chat.jumperlink.net&quot;</li>
+</ul>
+</li>
+<li>Edit configuration
+  sudo nano /etc/systemd/resolved.conf.d/adguard-dns.conf</li>
+<li>Apply changes (restart systemd-resolved)<ul>
+<li>sudo systemctl restart systemd-resolved</li>
+</ul>
+</li>
+<li>Verify configuration took effect<ul>
+<li>resolvectl status</li>
+</ul>
+</li>
+<li>Testing DNS Resolution<ul>
+<li>dig @127.0.0.1 -p 5354 chat.jumperlink.net</li>
+</ul>
+</li>
+<li>Test external domain resolution (should use fallback)<ul>
+<li>dig google.com</li>
+</ul>
+</li>
+<li>Check if AdGuard Home is running<ul>
+<li>sudo systemctl status adguardhome</li>
+</ul>
+</li>
+<li></li>
+</ul>
+</li>
+</ul>
+<h2 id="etc-systemd-docker-service">etc/systemd/docker.service</h2>
+<p>Controls startup for containers &amp; dependencies</p>
+<ul>
+<li><strong>Systemd socket activation</strong> integration for on demand container startup<ul>
+<li>docker.socket starts at boot (requires socket unit to start)<ol>
+<li>creates /run/docker.sock</li>
+<li>I connet to /run/docker.sock</li>
+<li>systemd detects connection</li>
+<li>systemd starts docker.service</li>
+<li>systemd passes socket file descriptor to dockerd</li>
+<li>dockerd begins handling my request</li>
+<li>subsequent API calls go straight to dockerd daemon</li>
+</ol>
+</li>
+<li><em>remember</em> -H fd:// parameter tells dockerd to accept connections on file descriptors inherited from systemd (doesn&#39;t creat its own socket) (seamless handoff)</li>
+<li>this handes restarts, if dockerd crashes, socket remains available and triggers restart on next connection</li>
+<li>security: Socket permissions control API access (daemon has nothing to do with it)</li>
+</ul>
+</li>
+<li><strong>Must start before Docker</strong><ul>
+<li>network-online.target (checks network configuration)</li>
+<li>nss-lookup.target (DNS resolution is ready)</li>
+<li>docker.socket</li>
+<li>firewalld.service (firewall rules)<ul>
+<li>establishes firewall rules (iptables)</li>
+<li>docker modifies iptables</li>
+<li>firewalld.services checks they don&#39;t conflict</li>
+<li>integrates docker rules with host rules</li>
+</ul>
+</li>
+<li>containerd.service (container runtime backend)</li>
+<li>time-set.target (system time sync (for certs and logs))</li>
+</ul>
+</li>
+</ul>
+<h2 id="etc-systemd-nginx-service">etc/systemd/nginx.service</h2>
+<ul>
+<li>web server and reverse proxy<h2 id="etc-systemd-certbot-timer">etc/systemd/certbot.timer</h2>
+</li>
+<li>automates SSL certificate renewal<ul>
+<li>encrypts data and verifies website&#39;s identity<h2 id="etc-systemd-systemd-resolved-service">etc/systemd/systemd-resolved.service</h2>
+</li>
+</ul>
+</li>
+<li>DNS resolution with AdGuard integration<h2 id="etc-systemd-networkmanager-service">etc/systemd/NetworkManager.service</h2>
+</li>
+<li>Network interface management<h2 id="etc-systemd-ssh-service">etc/systemd/ssh.service</h2>
+<h2 id="etc-systemd-ufw-service">etc/systemd/ufw.service</h2>
+</li>
+<li>Default Dependencies=no<ul>
+<li>disables default systemd dependencies</li>
+<li>prevents UFW from starting after docker alters iptables</li>
+</ul>
+</li>
+<li>Before=network-pre.target<ul>
+<li>require UFW start before network services<h2 id="-etc-systemd-system-adguardhome-service">/etc/systemd/system/adguardhome.service</h2>
+</li>
+</ul>
+</li>
+<li>defines how AdGuard Home runs as a system service<ul>
+<li>network-level DNS blocker</li>
+</ul>
+</li>
+<li>Description=AdGuard Home: Network-level blocker<ul>
+<li>serviec identification</li>
+</ul>
+</li>
+<li>After=network.target<ul>
+<li>starts after network interfaces are available</li>
+</ul>
+</li>
+<li>Before=nss-lookup.target<ul>
+<li>must be running before DNS lookup</li>
+</ul>
+</li>
+<li>Wants=nss-lookup.target<ul>
+<li>suggests that nss-lookup.target should be started</li>
+</ul>
+</li>
+<li>Type=simple<ul>
+<li>Process doesn&#39;t fork/daemonize (runs in foreground)</li>
+</ul>
+</li>
+<li>User=adguard<ul>
+<li>Runs as dedicated non-root user account</li>
+</ul>
+</li>
+<li>Group=adguard<ul>
+<li>Uses dedicated group for file permissions</li>
+</ul>
+</li>
+<li>WorkingDirectory <ul>
+<li>Sets current directory for the process</li>
+</ul>
+</li>
+<li>Restart=always <ul>
+<li>Automatically restart if process exits (except clean shutdown)</li>
+</ul>
+</li>
+<li>RestartSec=10 <ul>
+<li>Wait 10 seconds between restart attempts</li>
+</ul>
+</li>
+<li>SECURITY</li>
+<li>NoNewPrivileges=yes</li>
+<li>Prevents privilege escalation via setuid/setgid</li>
+<li>PrivateTmp=yes<ul>
+<li>Provides private /tmp directory (namespace isolation)</li>
+</ul>
+</li>
+<li>ProtectHome=yes<ul>
+<li>Makes /home, /root,  run/user inaccessible</li>
+</ul>
+</li>
+<li>ProtectSystem=strict<ul>
+<li>Makes entire filesystem read-only except specified paths</li>
+</ul>
+</li>
+<li>ReadWritePaths<ul>
+<li>Only these directories are writable:<pre><code>- /opt/adguardhome/work (<span class="hljs-name">Runtime</span> data (<span class="hljs-name">databases</span>, logs, configs))
+</code></pre><ul>
+<li>/opt/adguardhome/conf</li>
+<li>Configuration storage<h2 id="service-monitoring">Service Monitoring</h2>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<h2 id="view-service-logs">View service logs</h2>
+<p>sudo journalctl -u adguardhome -f</p>
+<h2 id="check-service-dependencies">Check service dependencies</h2>
+<p>sudo systemctl list-dependencies adguardhome</p>
+<h2 id="monitor-resource-usage">Monitor resource usage</h2>
+<p>sudo systemctl show adguardhome --property=MemoryCurrent,CPUUsageNSec</p>
+<h2 id="view-service-properties">View service properties</h2>
+<p>sudo systemctl show adguardhome</p>
+<h2 id="service-configuration-management">Service Configuration Management</h2>
+<h2 id="edit-service-file">Edit service file</h2>
+<p>sudo systemctl edit adguardhome</p>
+<h2 id="view-complete-service-configuration">View complete service configuration</h2>
+<p>sudo systemctl cat adguardhome</p>
+<h2 id="reload-systemd-after-changes">Reload systemd after changes</h2>
+<p>sudo systemctl daemon-reload</p>
+<h2 id="check-for-syntax-errors">Check for syntax errors</h2>
+<p>sudo systemd-analyze verify adguardhome.service</p>
+<h2 id="troubleshooting-common-issues">Troubleshooting Common Issues</h2>
+<h2 id="service-start-failures">Service Start Failures</h2>
+<h2 id="check-detailed-service-status">Check detailed service status</h2>
+<p>sudo systemctl status adguardhome --no-pager -l</p>
+<h2 id="view-startup-logs">View startup logs</h2>
+<p>sudo journalctl -u adguardhome --since boot</p>
+<h2 id="check-configuration-file">Check configuration file</h2>
+<p>sudo /opt/adguardhome/AdGuardHome --check-config -c /opt/adguardhome/work/AdGuardHome.yaml</p>
+<h2 id="verify-file-permissions">Verify file permissions</h2>
+<p>ls -la /opt/adguardhome/
+ls -la /opt/adguardhome/work/</p>
+<h2 id="permission-issues">Permission Issues</h2>
+<h2 id="check-user-account-exists">Check user account exists</h2>
+<p>id adguard</p>
+<h2 id="verify-file-ownership">Verify file ownership</h2>
+<p>sudo chown -R adguard:adguard /opt/adguardhome/work/
+sudo chown -R adguard:adguard /opt/adguardhome/conf/</p>
+<h2 id="check-directory-permissions">Check directory permissions</h2>
+<p>sudo chmod 755 /opt/adguardhome/work/
+sudo chmod 644 /opt/adguardhome/work/AdGuardHome.yaml</p>
+<h2 id="network-binding-issues">Network Binding Issues</h2>
+<h2 id="check-if-ports-are-available">Check if ports are available</h2>
+<p>sudo netstat -tulpn | grep :5354
+sudo netstat -tulpn | grep :3001</p>
+<h2 id="test-port-binding-manually">Test port binding manually</h2>
+<p>sudo -u adguard /opt/adguardhome/AdGuardHome --check-config</p>
+<h2 id="verify-capabilities">Verify capabilities</h2>
+<p>sudo systemctl show adguardhome --property=CapabilityBoundingSet,AmbientCapabilities</p>
+<h2 id="disk-space-issues">Disk Space Issues</h2>
+<h2 id="check-available-space">Check available space</h2>
+<p>df -h /opt/adguardhome/work/</p>
+<h2 id="check-log-file-sizes">Check log file sizes</h2>
+<p>sudo du -sh /opt/adguardhome/work/data/</p>
+<h2 id="clean-query-logs-if-needed-emergency-">Clean query logs if needed (emergency)</h2>
+<p>sudo systemctl stop adguardhome
+sudo truncate -s 0 /opt/adguardhome/work/data/querylog.json
+sudo systemctl start adguardhome</p>
+<h2 id="performance-monitoring">Performance Monitoring</h2>
+<h2 id="service-performance-metrics">Service Performance Metrics</h2>
+<h2 id="real-time-resource-monitoring">Real-time resource monitoring</h2>
+<p>sudo systemctl status adguardhome</p>
+<h2 id="memory-usage-details">Memory usage details</h2>
+<p>sudo systemctl show adguardhome --property=MemoryCurrent,MemoryHigh,MemoryMax</p>
+<h2 id="cpu-usage-tracking">CPU usage tracking</h2>
+<p>sudo systemctl show adguardhome --property=CPUUsageNSec</p>
+<h2 id="process-information">Process information</h2>
+<p>ps aux | grep AdGuardHome</p>
+<h2 id="dns-performance-monitoring">DNS Performance Monitoring</h2>
+<h2 id="test-dns-response-time">Test DNS response time</h2>
+<p>time nslookup google.com 127.0.0.1 -port=5354</p>
+<h2 id="monitor-dns-queries">Monitor DNS queries</h2>
+<p>sudo journalctl -u adguardhome -f | grep &quot;processing request&quot;</p>
+<h2 id="check-adguard-home-statistics">Check AdGuard Home statistics</h2>
+<p>curl -s <a href="http://127.0.0.1:3001/control/stats">http://127.0.0.1:3001/control/stats</a></p>
+<h2 id="configuration-backup-and-recovery">Configuration Backup and Recovery</h2>
+<h2 id="service-configuration-backup">Service Configuration Backup</h2>
+<h2 id="backup-service-file">Backup service file</h2>
+<p>sudo cp /etc/systemd/system/adguardhome.service /home/ejumps/backups/adguardhome.service.$(date +%Y%m%d-%H%M%S)</p>
+<h2 id="backup-complete-adguard-home-configuration">Backup complete AdGuard Home configuration</h2>
+<p>sudo tar -czf /home/ejumps/backups/adguardhome-config-$(date +%Y%m%d-%H%M%S).tar.gz \
+  /opt/adguardhome/work/AdGuardHome.yaml \
+  /etc/systemd/system/adguardhome.service</p>
+<h2 id="service-recovery-procedures">Service Recovery Procedures</h2>
+<h2 id="if-service-file-is-corrupted-restore-from-backup">If service file is corrupted, restore from backup</h2>
+<p>sudo cp /home/ejumps/backups/adguardhome.service.YYYYMMDD-HHMMSS /etc/systemd/system/adguardhome.service
+sudo systemctl daemon-reload
+sudo systemctl restart adguardhome</p>
+<h2 id="emergency-service-disable-if-causing-boot-issues-">Emergency service disable (if causing boot issues)</h2>
+<p>sudo systemctl disable adguardhome
+sudo systemctl mask adguardhome</p>
+<h2 id="re-enable-after-fixing-issues">Re-enable after fixing issues</h2>
+<p>sudo systemctl unmask adguardhome
+sudo systemctl enable adguardhome
+sudo systemctl start adguardhome</p>

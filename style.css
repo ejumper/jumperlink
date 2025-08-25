@@ -417,6 +417,15 @@ p{
      color: hsla(var(--super-light), 1);
 }
 
+td{
+  font-size: calc(var(--title-size-scale) / 2.4);
+}
+tr{
+  font-size: calc(var(--title-size-scale) / 2.4);
+  color: hsla(var(--super-light), 1);
+}
+
+
 .paragraph{
     margin: 0;
     padding: 0;
