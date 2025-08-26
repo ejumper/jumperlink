@@ -12,7 +12,7 @@
 </ul>
 </li>
 <li>Systemd-resolved<ul>
-<li>forwards jumperlink domain queries to AdGuard</li>
+<li>forwards ********** domain queries to AdGuard</li>
 <li>acts as local DNS proxy/forwarder</li>
 </ul>
 </li>
@@ -53,17 +53,17 @@
 <li>FALLBACK DNS SERVER CONFIGURATION</li>
 <li>integrates systemd-resolved with adguard home <ul>
 <li>provies DNS resolution</li>
-<li>ensures jumperlink is resolved through AdGuard</li>
+<li>ensures ********** is resolved through AdGuard</li>
 </ul>
 </li>
 <li>Configuration<ul>
 <li>[Resolve]</li>
 <li>DNS=127.0.0.1:5354 (loopback address with AdGuard port)</li>
-<li>Domains=~jumperlink.net</li>
+<li>Domains=~**********.net</li>
 </ul>
 </li>
 <li>traffic flow<ul>
-<li>I go to cloud.jumperlink.net and send a DNS query for cloud.jumperlink.net</li>
+<li>I go to cloud.**********.net and send a DNS query for cloud.**********.net</li>
 <li>systemd-resolved receives query at x.81</li>
 <li>forwards to Adgaurd&#39;s port (:5354) using loopback address</li>
 <li>Adguard Home uses a DNS rewrite to send it back to x.81</li>
@@ -110,7 +110,7 @@
 <li>lets me bind to &quot;privileged ports&quot; (1-1023) without being root (letting AdGuard run as root is a security risk)</li>
 <li>lets AdGuard bind to :5354 for DNS<ul>
 <li>fixed conflicts with systemd-resolved (was also using 53)<ul>
-<li>systemd-resolved forwards to jumperlink domain queries to AdGuard</li>
+<li>systemd-resolved forwards to ********** domain queries to AdGuard</li>
 </ul>
 </li>
 <li>bound Collabora Office on :3001</li>
@@ -146,8 +146,8 @@
 </li>
 <li><strong>DNS</strong><ul>
 <li>DNS=127.0.0.1:5354 (link local address for routing to AdGuard port)</li>
-<li>Domains=~jumperlink.net (~ means all subdomains)</li>
-<li>FallbackDNS=192.168.1.254 1.1.1.1 1.0.0.1 (falls back on local router, Cloudflare DNS, and a different cloudflare DNS)</li>
+<li>Domains=~**********.net (~ means all subdomains)</li>
+<li>FallbackDNS=***.***.***.254 1.1.1.1 1.0.0.1 (falls back on local router, Cloudflare DNS, and a different cloudflare DNS)</li>
 <li>What this looks like<ul>
 <li>App request -&gt; systemd-resolved -&gt; AdGuard Home -&gt; response</li>
 </ul>
@@ -168,7 +168,7 @@
 </ul>
 </li>
 <li>test domain resolution<ul>
-<li>resolvectl query chat.jumperlink.net</li>
+<li>resolvectl query chat.**********.net</li>
 <li>resolvectl query google.com</li>
 </ul>
 </li>
@@ -189,7 +189,7 @@
 </ul>
 </li>
 <li>testing DNS resolution<ul>
-<li>dig @127.0.0.1 -p 5354 chat.jumperlink.net</li>
+<li>dig @127.0.0.1 -p 5354 chat.**********.net</li>
 </ul>
 </li>
 <li>Test external domain resolution (should use fallback)<ul>
@@ -197,11 +197,11 @@
 </ul>
 </li>
 <li>Test with specific resolver<ul>
-<li>nslookup chat.jumperlink.net 127.0.0.1</li>
+<li>nslookup chat.**********.net 127.0.0.1</li>
 </ul>
 </li>
 <li>Monitor DNS queries in AdGuard Home logs<ul>
-<li>sudo journalctl -u adguardhome -f | grep &quot;chat.jumperlink.net&quot;</li>
+<li>sudo journalctl -u adguardhome -f | grep &quot;chat.**********.net&quot;</li>
 </ul>
 </li>
 <li>Edit configuration
@@ -215,7 +215,7 @@
 </ul>
 </li>
 <li>Testing DNS Resolution<ul>
-<li>dig @127.0.0.1 -p 5354 chat.jumperlink.net</li>
+<li>dig @127.0.0.1 -p 5354 chat.**********.net</li>
 </ul>
 </li>
 <li>Test external domain resolution (should use fallback)<ul>

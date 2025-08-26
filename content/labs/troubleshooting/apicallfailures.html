@@ -44,9 +44,9 @@ I click on &quot;Learn More&quot; and suddenly all the information I need is rig
 What I found...</li>
 <li>the issue isn&#39;t authentication, it&#39;s that that websocket connection isn&#39;t working and Socket.IO can&#39;t establish a wss:// connection</li>
 <li>&quot;The source map data can be invalid — either not a JSON file at all, or with an incorrect structure. Typical error messages here are: - <code>SyntaxError: JSON.parse: unexpected character at line 1 column 1 of the JSON data</code>&quot;
-I do a quick ctrl+f in my obsidian vault where I keep all the documentation for my server and I can see my notes on setting up WebSocket, I go to /etc/nginx/sites-available/chat.jumperlink.net.conf and unfortunately Websocket support is configured perfectly, which I guess I should have expected since it works for external connections.</li>
+I do a quick ctrl+f in my obsidian vault where I keep all the documentation for my server and I can see my notes on setting up WebSocket, I go to /etc/nginx/sites-available/chat.**********.net.conf and unfortunately Websocket support is configured perfectly, which I guess I should have expected since it works for external connections.</li>
 </ul>
-<p>Here&#39;s the question: Why does WebSockets behave differently for internal and external connections. Why doesn&#39;t Nextcloud have websocket connection problems locally, it is also proxying to 192.168.1.81 and things I have set up like streaming video should require the same real time functionality that Open WebUi is failing on, shouldn&#39;t they?</p>
+<p>Here&#39;s the question: Why does WebSockets behave differently for internal and external connections. Why doesn&#39;t Nextcloud have websocket connection problems locally, it is also proxying to ***.***.***.81 and things I have set up like streaming video should require the same real time functionality that Open WebUi is failing on, shouldn&#39;t they?</p>
 <p>Here&#39;s my next idea. </p>
 <ul>
 <li>I&#39;m going to go t the Open WebUI nginx documentation and check that I set everything up correctly. </li>
@@ -54,7 +54,7 @@ I do a quick ctrl+f in my obsidian vault where I keep all the documentation for 
 </ul>
 <p>I FOUND IT! as soon as I searched GitHub for known issues I was flooded with people who had the same problem as me! This is a known problem with Open WebUI and there is a fix.
 <img class="blog-img" src="content/labs/images/Pasted%20image%2020250824175222.png" alt="Pasted image 20250824175222">
-I head to /etc/nginx/sites-available/chat.jumperlink.net.conf
+I head to /etc/nginx/sites-available/chat.**********.net.conf
 <img class="blog-img" src="content/labs/images/Pasted%20image%2020250824175909.png" alt="Pasted image 20250824175909">
 I have a new problem now, I recently installed the kitty terminal emulator and its causing problems using nano over ssh
 <img class="blog-img" src="content/labs/images/Pasted%20image%2020250824180410.png" alt="Pasted image 20250824180410">

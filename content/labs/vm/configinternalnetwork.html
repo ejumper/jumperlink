@@ -31,10 +31,10 @@
 <p>under <strong>This connection uses the following items:</strong> I select <strong>Internet Protocol Version 4 (TCP /IPv4)</strong> then click <strong>Properties</strong></p>
 <p>In the <strong>General Tab</strong> I select <strong>Use the following IP address</strong></p>
 <p>Now I can assign a static IP address</p>
-<p>the first step here is to select a private IP range that can be used on all my VMs to access the internal network. It doesn't particularly matter which private range I choose and the Class C range was the first to pop into my head so I went with 192.168.0.0</p>
-<p>I will assign a <strong>subnet mask of 255.255.255.0</strong> and number each device in the final octet starting with this device giving it an <strong>IP address of 192.168.0.10</strong> (Even though I do not have a default gateway using 192.168.0.1 I figured it was good practice to reserve a few addresses for network services. This is why I started with .10)</p>
+<p>the first step here is to select a private IP range that can be used on all my VMs to access the internal network. It doesn't particularly matter which private range I choose and the Class C range was the first to pop into my head so I went with ***.***.***.0</p>
+<p>I will assign a <strong>subnet mask of 255.255.255.0</strong> and number each device in the final octet starting with this device giving it an <strong>IP address of ***.***.***.10</strong> (Even though I do not have a default gateway using ***.***.***.1 I figured it was good practice to reserve a few addresses for network services. This is why I started with .10)</p>
 <p>Since this is an isolated internal network there is reason to configure a Default Gateway</p>
-<p>Since AD DS automatically installs DNS and this server will use itself as a DNS server I will put its own <strong>IP address of 192.168.10 as the Preferred DNS server</strong> &amp; the  <strong>loopback address 127.0.0.1 as the alternate DNS server</strong></p>
+<p>Since AD DS automatically installs DNS and this server will use itself as a DNS server I will put its own <strong>IP address of ***.***.***.10 as the Preferred DNS server</strong> &amp; the  <strong>loopback address 127.0.0.1 as the alternate DNS server</strong></p>
 <p><em>I originally placed the loopback address as the primary DNS server however best practice analyzer considered this an error. Since I only have one Domain Controller I believe it would have been fine but to follow best practices I went ahead and changed it</em></p>
 <img class="blog-img" src="content/labs/images/Pasted image 20250518230604.png">
 </section>

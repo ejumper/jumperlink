@@ -44,7 +44,7 @@
 --button-spacing: clamp(calc(50% + 130px), 80vw, calc(50% + 400px));
 --icon-gap: calc(var(--title-size-scale)*2 - 35px);
 --view-resume-width: calc(((var(--icon-width) - 4.5px) * 2) + (var(--icon-gap) * 1));
---homelab-scale: clamp(50px, 20vw, 180px);
+--homelab-scale: clamp(50px, 20vw, 160px);
 --border: 1.5px solid hsla(var(--light), .2);
 }
 
@@ -228,10 +228,10 @@ dialog h3{
 /*----------------------MENU----------------------*/
 .nav-menu{
     display: grid; 
-    grid-template-columns: repeat(auto-fit, minmax(50px, 1fr));
-    padding-left:  calc(var(--pad-l) + 10%);
-    padding-right: calc(var(--pad-r) + 10%);
-    /*gap: clamp(10px, 2vw, 32px);*/
+    grid-template-columns: repeat(4, 1fr);
+    padding-left:  calc(var(--pad-l) + 5%);
+    padding-right: calc(var(--pad-r) + 5%);
+    gap: clamp(2px, .5vw, 20px);
 }
 
 .menu-item{
@@ -338,7 +338,7 @@ dialog h3{
 .education{
     
     margin: 0 var(--v-gap) var(--v-gap) var(--v-gap);
-    font-size: calc(var(--title-size-scale) / 2);
+    font-size: clamp(0.9rem, calc(var(--title-size-scale) / 2), 1.1rem);
     display: grid;
     gap: 0 2rem;
     grid-template-columns: repeat(auto-fit, minmax(0, 400px));
@@ -437,7 +437,7 @@ tr{
 .link{
     font-weight: 400;
     font-size: calc(var(--title-size-scale) / 2.8);
-     color: hsla(var(--light), 1);
+    color: hsla(var(--light), 1);
     margin: 0;
     padding: 0;
     font-style: italic;
@@ -452,13 +452,13 @@ tr{
 
 .homelabs{  
     display: grid;
-    grid-template-columns: repeat(auto-fit, calc(var(--homelab-scale)/1.02));
-    grid-template-rows: repeat(auto-fit, calc(var(--homelab-scale)/1.02));
+    grid-template-columns: repeat(auto-fit, calc(var(--homelab-scale)/.8));
+    grid-template-rows: repeat(auto-fit, calc(var(--homelab-scale)/.8));
     justify-content: center;
     color: hsla(var(--light), 1);
 }
 
-.adds, .ticketing, .vm, .other, .ubuntu, .aws{
+.adds, .ticketing, .vm, .other, .ubuntu, .troubleshooting, .aws{
     margin: .2rem;
     text-decoration: none;
     aspect-ratio: 1/1;
@@ -474,7 +474,7 @@ tr{
     color: hsla(var(--labs-text), .9);
 }
 
-.adds:hover, .ticketing:hover, .vm:hover, .other:hover, .ubuntu:hover, .aws:hover {
+.adds:hover, .ticketing:hover, .vm:hover, .other:hover, .troubleshooting, .ubuntu:hover, .aws:hover {
     transform: scale(.99);
     /*border-right: 2px solid hsla(var(--dark), .1);*/
     /*border-top: 2px solid hsla(var(--dark), .1);*/
@@ -482,34 +482,31 @@ tr{
 }
 
 
-.adds{
+
+.ubuntu{
     filter: hue-rotate(40deg);
 }
 
-.ubuntu{
+.adds{
     filter: hue-rotate(80deg);
 }
 
-.aws{ 
+.troubleshooting{
     filter: hue-rotate(120deg);
 }
 
-.ticketing{
-    filter: hue-rotate(1600deg);
-}
-
 .vm{
-    filter: hue-rotate(200deg);
+    filter: hue-rotate(160deg);
 }
 
 .other{
-    filter: hue-rotate(240deg);
+    filter: hue-rotate(200deg);
 }
 
-.adds:hover, .ticketing:hover, .vm:hover, .other:hover, .ubuntu:hover, .aws:hover {
+.adds:hover, .ticketing:hover, .vm:hover, .other:hover, .troubleshooting:hover, .ubuntu:hover, .aws:hover {
     transform: scale(.99);
     border-right: 2px solid hsla(var(--super-dark), .1);
-    border-top: 2px solid hsla(var(--dark), .5);
+    border-top: 1.5px solid black;
     box-shadow:(var(--shadow-light));
     
 }
@@ -526,7 +523,7 @@ h5{
 
 h6{
     font-weight: 400;
-    font-size: calc(var(--homelab-scale)/10);
+    font-size: calc(var(--homelab-scale)/7.5);
     margin: calc(var(--homelab-scale)/15) 0 0 0;
         
 }

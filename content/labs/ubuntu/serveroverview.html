@@ -16,7 +16,7 @@
 <li><strong>Kernel</strong>: Linux 6.8.0-1032-raspi
 <strong>Network Config</strong> (see more below)</li>
 <li>Primary Interface: eth0<ul>
-<li>IPv4: 192.168.1.81/24</li>
+<li>IPv4: ***.***.***.81/24</li>
 <li>IPv6: 2600:1702:4fc9:9010::43/128</li>
 <li>MAC: 2c:cf:67:7f:45:60
 <strong>Ports</strong></li>
@@ -120,12 +120,12 @@
 <p><strong>Domain Resolution</strong></p>
 <ul>
 <li>Public Domains (using Let&#39;s Encrypt)<ul>
-<li>cloud.jumperlink.net (Nextcloud)</li>
-<li>chat.jumperlink.net (Open WebUI)</li>
+<li>cloud.**********.net (Nextcloud)</li>
+<li>chat.**********.net (Open WebUI)</li>
 </ul>
 </li>
 <li>Internal Resolution (using AdGuard)<ul>
-<li>all domains resolve to 192.168.1.81</li>
+<li>all domains resolve to ***.***.***.81</li>
 </ul>
 </li>
 </ul>
@@ -133,12 +133,12 @@
 <ul>
 <li><strong>Docker Containers</strong><ul>
 <li><strong>Nextcloud All-in-One (AIO)</strong><ul>
-<li>cloud.jumperlink.net</li>
+<li>cloud.**********.net</li>
 <li><strong>Network</strong><ul>
 <li>WAN -&gt; Router:9443 -&gt; nginx:9443 -&gt; Nextcloud AIO MC:8080 -&gt; Apache :443</li>
 <li>LAN -&gt; nginx:9443 -&gt; Nextcloud AIO MC:8080 -&gt; Apache :443</li>
 <li>traffic flow<ul>
-<li>I go to cloud.jumperlink.net and send a DNS query for cloud.jumperlink.net</li>
+<li>I go to cloud.**********.net and send a DNS query for cloud.**********.net</li>
 <li>systemd-resolved receives query at x.81</li>
 <li>forwards to Adgaurd&#39;s port (:5354) using loopback address</li>
 <li>Adguard Home uses a DNS rewrite to send it back to x.81</li>
@@ -230,17 +230,17 @@
 </ul>
 </li>
 <li><strong>Open WebUI</strong><ul>
-<li>chat.jumperlink.net</li>
+<li>chat.**********.net</li>
 <li><strong>Network</strong><ul>
 <li>WAN -&gt; Router:9443 -&gt; nginx:9443 -&gt; Open WebUI container:3000 -&gt; container: 8080</li>
 <li>LAN -&gt; nginx:9443 -&gt; Open WebUI container: 3000 -&gt; container: 8080</li>
 <li>traffic flow<ul>
-<li>I go to chat.jumperlink.net and send a DNS query for chat.jumperlink.net</li>
+<li>I go to chat.**********.net and send a DNS query for chat.**********.net</li>
 <li>systemd-resolved receives query at x.81</li>
 <li>forwards to AdGuard&#39;s port (:5354) using loopback address</li>
 <li>AdGuard Home uses a DNS rewrite to send it back to x.81</li>
 <li>systemd-resolved returns .81 IP to me</li>
-<li>nginx reverse proxies 443 to 9443 (if I used the default HTTPS port i.e. chat.jumperlink.net instead of chat.jumperlink.net:9443)</li>
+<li>nginx reverse proxies 443 to 9443 (if I used the default HTTPS port i.e. chat.**********.net instead of chat.**********.net:9443)</li>
 </ul>
 </li>
 </ul>
@@ -271,9 +271,9 @@
 <li>Configuration: /opt/adguardhome/work/AdGuardHome.yaml</li>
 <li>User/Group: adguard:adguard</li>
 <li><strong>DNS Servers</strong>:<ul>
-<li>Systemd resolved uses AdGuard for jumperlink.net domain<ul>
-<li>Fallbacks back to: 192.168.1.254 -&gt; 1.1.1.1 -&gt; 1.0.0.1<ul>
-<li>192.168.1.254 (router)</li>
+<li>Systemd resolved uses AdGuard for **********.net domain<ul>
+<li>Fallbacks back to: ***.***.***.254 -&gt; 1.1.1.1 -&gt; 1.0.0.1<ul>
+<li>***.***.***.254 (router)</li>
 <li>1.1.1.1 (Cloudflare)</li>
 <li>1.0.0.1 (Cloudflare)</li>
 </ul>
@@ -310,8 +310,8 @@
 </ul>
 </li>
 <li><strong>DNS Rewrites</strong> (Internal Resolution)<ul>
-<li>cloud.jumperlink.net → 192.168.1.81</li>
-<li>chat.jumperlink.net → 192.168.1.81</li>
+<li>cloud.**********.net → ***.***.***.81</li>
+<li>chat.**********.net → ***.***.***.81</li>
 </ul>
 </li>
 <li><strong>Security</strong><ul>
@@ -392,7 +392,7 @@
 </li>
 </ul>
 </li>
-<li><strong>cloud.jumperlink.net (443)</strong><ul>
+<li><strong>cloud.**********.net (443)</strong><ul>
 <li>Backend<ul>
 <li>127.0.0.1:11000 (Apache)</li>
 </ul>
@@ -437,7 +437,7 @@
 </li>
 </ul>
 </li>
-<li><strong>chat.jumperlink.net (443 -&gt; 9443)</strong><ul>
+<li><strong>chat.**********.net (443 -&gt; 9443)</strong><ul>
 <li>backend<ul>
 <li>127.0.0.1:3000</li>
 </ul>
@@ -643,7 +643,7 @@
 <li><strong>SSL Certificate Management</strong><ul>
 <li>Initial Certificate Process (How I got my first certs)<ol>
 <li>Certificate request<ul>
-<li>certbot --nginx -d chat.jumperlink<ul>
+<li>certbot --nginx -d chat.**********<ul>
 <li>certbot: contacts Let&#39;s Encrypt, asks for certs for subdomain</li>
 </ul>
 </li>
@@ -668,7 +668,7 @@
 </li>
 <li>Let&#39;s Encrypt sends an HTTP request to the public IP Cloudflare provided</li>
 <li>Since I am the site owner the request reaches port 80 on my router<ul>
-<li>I have configured port 80 to forward traffic to 192.168.1.81 (my server)</li>
+<li>I have configured port 80 to forward traffic to ***.***.***.81 (my server)</li>
 </ul>
 </li>
 <li>nginx finds the token in /var/www/html/.well-known/acme-challenge/\<token><ul>
@@ -805,7 +805,7 @@
 </li>
 <li><strong>Management</strong><ul>
 <li>Nextcloud AIO<ul>
-<li>Web Interface: <a href="https://cloud.jumperlink.net:8080">https://cloud.jumperlink.net:8080</a></li>
+<li>Web Interface: <a href="https://cloud.**********.net:8080">https://cloud.**********.net:8080</a></li>
 </ul>
 </li>
 <li>Open WebUI<ul>
@@ -866,9 +866,9 @@
 <li><strong>Nginx</strong><ul>
 <li><code>/etc/nginx/</code> <ul>
 <li>`/etc/nginx/sites-available<ul>
-<li><code>/chat.jumperlink.net.conf</code></li>
-<li><code>/cloud.jumperlink.net.conf</code></li>
-<li><code>/office.jumperlink.net.conf.backup</code></li>
+<li><code>/chat.**********.net.conf</code></li>
+<li><code>/cloud.**********.net.conf</code></li>
+<li><code>/office.**********.net.conf.backup</code></li>
 </ul>
 </li>
 <li><code>/etc/nginx/sites-enabled/</code></li>
@@ -888,8 +888,8 @@
 <li><code>/cli.ini</code></li>
 <li><code>/ssl-dhparams.pem</code></li>
 <li><code>/options-ssl-nginx.conf</code></li>
-<li><code>/renewal/chat.jumperlink.net.conf</code></li>
-<li><code>/renewal/cloud.jumperlink.net.conf</code></li>
+<li><code>/renewal/chat.**********.net.conf</code></li>
+<li><code>/renewal/cloud.**********.net.conf</code></li>
 </ul>
 </li>
 </ul>
