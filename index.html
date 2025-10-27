@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>desktop</title>
+    <link rel="icon" type="image/png" href="icons/desktop.png">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="top-panel">
+        <div id="clock" class="clock"></div>
+    </div>
+
+    <div class="main-content">
+        <div class="launcher-grid" id="launcherGrid"></div>
+        <div class="search-results" id="searchResults" style="display: none;"></div>
+        <div class="bookmark-browser" id="bookmarkBrowser" style="display: none;">
+            <div class="bookmark-nav">
+                <button class="back-button" id="backButton" style="display: none;">← Back</button>
+                <span class="bookmark-path" id="bookmarkPath">Bookmarks</span>
+            </div>
+            <div class="bookmark-grid" id="bookmarkGrid"></div>
+        </div>
+    </div>
+
+    <div class="search-container" id="searchContainer">
+        <button class="search-button" id="searchButton">🔍</button>
+        <button class="bookmark-button" id="bookmarkButton">🗂️</button>
+        <input type="text" class="search-input" id="searchInput" placeholder="Search..." style="display: none;">
+        <button class="search-close" id="searchClose" style="display: none;">✕</button>
+    </div>
+
+    <div class="side-panel" id="sidePanel"></div>
+
+    <script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,281 @@
+# Ubuntu Launcher-Style Server Landing Page
+
+## Project Overview
+Create a professional, production-ready landing page that mimics the Ubuntu GNOME/Unity launcher interface using modern HTML, CSS, and vanilla JavaScript. This page serves as a central hub for accessing server services (Nextcloud-AIO, Jellyfin, Open WebUI) and frequently visited websites.
+
+## Design Goal
+Build an Awwwards-quality interface that feels premium and polished, with smooth animations, glassmorphism effects, and pixel-perfect Ubuntu launcher aesthetics. The page should be fully responsive, transforming into an iOS-style home screen on mobile devices.
+
+## Core Features Required
+
+### 1. Desktop Icon Grid (Main Area)
+- **Data Source**: Read links from `applinks.txt` (one URL per line)
+- **Icon Behavior**:
+  - Display in a responsive grid layout (similar to Ubuntu desktop)
+  - Icons should be **draggable and repositionable** (persist positions in localStorage)
+  - **Double-click** to open link in same/new tab
+  - Icons should have hover effects and smooth transitions
+- **Icon Images**:
+  - **Default**: Fetch and display the website's favicon dynamically
+  - **Custom**: If a line contains a URL followed by a space and a filename (e.g., `https://example.com custom-icon.png`), load the image from `icons/custom-icon.png` instead
+  - Handle favicon fetch failures gracefully with a default fallback icon
+- **Mobile Behavior**: Transform into iPhone-style grid (fixed rows/columns, touch to open, remove drag functionality)
+
+### 2. Sidebar Panel (Left Side - Ubuntu Style)
+- **Data Source**: Read links from `panellinks.txt` (one URL per line)
+- **Icon Behavior**:
+  - Display vertically like Ubuntu's launcher sidebar
+  - Single-click to open link
+  - Active/hover states with subtle glow/highlight effects
+  - Icons should be fixed in position (not draggable)
+- **Icon Loading**: Same favicon/custom icon logic as desktop icons
+- **Mobile Behavior**: Transform into bottom dock row (horizontal layout, iOS-style)
+
+### 3. Top Panel (Ubuntu-Style Header Bar)
+
+#### Left Section
+- App launcher grid icon (9-dot grid, opens app drawer overlay with links from `applinks.txt`)
+
+#### Center Section
+- **Current time display** (update every second, format: HH:MM AM/PM or 24h)
+- **Clickable**: Opens `https://cloud.jumperlink.net/apps/calendar/dayGridMonth/now` in new tab
+
+#### Right Section
+- **Server monitoring widgets** showing real-time data:
+  - CPU usage (percentage with icon/graph)
+  - RAM usage (used/total GB with percentage)
+  - Disk usage (used/total GB)
+  - Network status indicator
+- **Note**: Implement frontend display; include placeholder data or fetch from a mock API endpoint. Document that backend integration (Node.js/Python API) will be needed for live server stats.
+
+### 4. Search Functionality
+- **Location**: Top center of panel (next to time or as overlay)
+- **Behavior**:
+  - Search through ALL links in `applinks.txt` and `panellinks.txt`
+  - Live filtering as user types (fuzzy search recommended)
+  - Display results in dropdown/overlay with matching icons
+  - Highlight matching text
+  - Click result to open link, press Enter to open first result
+  - ESC to close search overlay
+
+## Technical Implementation Requirements
+
+### Architecture & Code Quality
+- **Structure**: Use modern, maintainable code structure:
+  - `/components/` - Reusable UI components (DesktopIcon, SidebarIcon, SearchBar, ServerWidget)
+  - `/lib/` - Utility functions (favicon fetcher, link parser, localStorage manager)
+  - `/styles/` - CSS modules or organized stylesheets
+  - `/icons/` - Custom icon image files
+- **No Monolithic Files**: Split code logically, no 2000-line files
+- **ES6+ JavaScript**: Use modern syntax (async/await, modules, destructuring)
+- **Comments**: Add JSDoc comments for key functions
+
+### Drag & Drop Implementation
+- Use **HTML5 Drag and Drop API** or **modern draggable library** (Muuri.js, Gridstack.js recommended)
+- Example reference: [Coding Artist Draggable Grid Tutorial](https://codingartistweb.com/2024/12/build-a-draggable-and-sortable-grid-with-html-css-and-javascript-introduction/)
+- Save icon positions to `localStorage` and restore on page load
+
+### Favicon Fetching Strategy
+- **Primary Method**: Use Google's favicon service as fallback: `https://www.google.com/s2/favicons?domain=DOMAIN&sz=64`
+- **Direct Fetch**: Attempt to load from `${domain}/favicon.ico` first
+- **Error Handling**: Use default fallback icon (generic globe/link icon) if both fail
+- **Optimization**: Cache fetched favicons in localStorage/sessionStorage
+
+### CSS & Visual Design
+- **Ubuntu Theme**:
+  - Dark theme with Ubuntu orange accents (#E95420)
+  - Ubuntu font family (include from Google Fonts or fallback to system-ui)
+  - Panel background: `rgba(0, 0, 0, 0.85)` with slight blur
+  - Icon backgrounds: Rounded squares with subtle gradients/glassmorphism
+- **Animations**:
+  - Smooth transitions (0.2s-0.3s ease-in-out)
+  - Icon hover: slight scale (1.05), shadow elevation
+  - Sidebar active state: left border highlight + background glow
+- **Responsive Design**:
+  - Desktop: Grid layout (5-7 columns, auto rows)
+  - Tablet: 4-5 columns
+  - Mobile: iOS-style grid (4 columns, fixed spacing)
+
+### Responsive Breakpoints
+```css
+/* Desktop */
+@media (min-width: 1024px) { /* Ubuntu launcher layout */ }
+
+/* Tablet */
+@media (min-width: 768px) and (max-width: 1023px) { /* Hybrid layout */ }
+
+/* Mobile */
+@media (max-width: 767px) {
+  /* iOS-style home screen */
+  /* Sidebar becomes bottom dock */
+}
+```
+
+## File Parsing & Data Structure
+
+### Expected .txt File Format
+
+**applinks.txt / panellinks.txt**:
+```
+https://cloud.jumperlink.net
+https://chat.jumperlink.net
+https://media.jumperlink.net file-explorer.png
+https://claude.ai
+```
+
+### Parsing Logic
+```javascript
+// Parse each line:
+const lines = fileContent.split('\n').filter(line => line.trim());
+const links = lines.map(line => {
+  const parts = line.trim().split(/\s+/);
+  return {
+    url: parts[0],
+    customIcon: parts[1] || null, // If exists, load from icons/ folder
+    title: extractDomain(parts[0]) // Extract readable name from URL
+  };
+});
+```
+
+## Implementation Checklist
+
+### Phase 1: Core Structure (Do this first)
+- [ ] Create HTML boilerplate with semantic structure (header, main, aside)
+- [ ] Implement top panel with clock (functional, updates every second)
+- [ ] Add Ubuntu-style CSS theme (fonts, colors, panel styling)
+- [ ] Create basic grid layout for desktop icons
+
+### Phase 2: Data Loading & Icons
+- [ ] Write file parser to read `applinks.txt` and `panellinks.txt`
+- [ ] Implement favicon fetching utility (with fallbacks)
+- [ ] Render desktop icons dynamically from parsed data
+- [ ] Render sidebar icons from panellinks.txt
+- [ ] Handle custom icon loading from `icons/` folder
+
+### Phase 3: Interactivity
+- [ ] Implement double-click to open links (desktop icons)
+- [ ] Add single-click functionality (sidebar icons)
+- [ ] Make desktop icons draggable (use Muuri.js or vanilla HTML5 drag-drop)
+- [ ] Save/load icon positions from localStorage
+- [ ] Add hover states and smooth transitions
+
+### Phase 4: Search Feature
+- [ ] Build search overlay UI
+- [ ] Implement real-time search/filter across all links
+- [ ] Add keyboard navigation (arrow keys, Enter, ESC)
+- [ ] Highlight matching results
+
+### Phase 5: Advanced Features
+- [ ] Add server monitoring widget placeholders (CPU, RAM, disk)
+- [ ] Implement app drawer overlay (triggered by grid icon)
+- [ ] Add click handler to time (open calendar link)
+
+### Phase 6: Mobile Responsiveness
+- [ ] Transform grid to iOS-style layout on mobile
+- [ ] Move sidebar to bottom dock
+- [ ] Adjust search UI for mobile
+- [ ] Test touch interactions
+
+### Phase 7: Polish & Optimization
+- [ ] Add loading states and skeleton screens
+- [ ] Optimize favicon caching
+- [ ] Add error boundaries and user-friendly error messages
+- [ ] Test across browsers (Chrome, Firefox, Safari)
+- [ ] Validate accessibility (keyboard navigation, ARIA labels)
+
+## Reference Examples & Inspiration
+
+### Draggable Grid Libraries
+- **Muuri.js** (https://muuri.dev/) - Recommended for smooth drag-drop with layouts
+- **Gridstack.js** (https://gridstackjs.com/) - Responsive dashboard grids
+
+### Design Inspiration
+- Ubuntu GNOME Shell launcher
+- macOS Launchpad
+- iOS Home Screen grid layout
+
+### Code References
+- [W3Schools Draggable Elements](https://www.w3schools.com/howto/howto_js_draggable.asp)
+- [Coding Artist Draggable Grid Tutorial](https://codingartistweb.com/2024/12/build-a-draggable-and-sortable-grid-with-html-css-and-javascript-introduction/)
+- [Chrome Extensions Favicon Fetching](https://developer.chrome.com/docs/extensions/how-to/ui/favicons)
+
+## MCP Servers to Utilize
+
+Based on this project's needs, leverage these MCP servers if available:
+
+1. **Playwright MCP** (`mcp__playwright__*`):
+   - Use to test the webpage interactively
+   - Navigate to test URLs and verify favicons load correctly
+   - Capture screenshots for design review
+   - Test responsive layouts at different viewport sizes
+
+2. **Filesystem MCP** (`mcp__filesystem__*`):
+   - Read `applinks.txt` and `panellinks.txt` files
+   - Search for icon files in `icons/` directory
+   - Manage project file structure
+
+3. **Commands MCP** (if available):
+   - Set up local development server
+   - Run build/bundle commands if using build tools
+
+## Expected Output
+
+Deliver a **single-page application** with these files:
+- `index.html` - Semantic HTML structure
+- `styles/main.css` - Ubuntu-themed styles (or use CSS modules)
+- `scripts/main.js` - Core application logic
+- `scripts/components/` - Modular component files (DesktopIcon.js, Sidebar.js, Search.js, etc.)
+- `scripts/lib/` - Utilities (favicon.js, storage.js, parser.js)
+- `icons/` - Folder for custom icons (if any specified in .txt files)
+- `README.md` - Setup instructions, backend API requirements for server monitoring
+
+## Success Criteria
+
+The landing page is successful if:
+1. All links from .txt files render with correct icons (favicons or custom)
+2. Desktop icons are draggable and positions persist on reload
+3. Search finds and filters all links instantly
+4. Clock updates every second and links to calendar
+5. Mobile view looks like iOS home screen with bottom dock
+6. Page loads in < 2 seconds with smooth 60fps animations
+7. Works flawlessly in Chrome, Firefox, Safari (latest versions)
+8. Code is clean, modular, and maintainable (not a single giant file)
+
+## Development Notes
+
+- **Start Simple**: Get basic layout + file parsing working first, then add interactivity
+- **Test Incrementally**: Test each feature as you build (don't wait until the end)
+- **Use Browser DevTools**: Debug favicon loading, localStorage, and drag-drop
+- **Mobile-First CSS**: Write mobile styles first, then enhance for desktop
+- **Performance**: Debounce search input, lazy-load icons if many links
+- **Accessibility**: Add ARIA labels, keyboard shortcuts, focus management
+
+## Backend Requirements (Document for Future)
+
+For **live server monitoring** in the top-right panel, you'll need to implement:
+- Node.js/Python API endpoint that returns JSON:
+  ```json
+  {
+    "cpu": { "usage": 45.2, "cores": 8 },
+    "ram": { "used": 8.2, "total": 16, "percent": 51.25 },
+    "disk": { "used": 250, "total": 500, "percent": 50 },
+    "network": { "status": "connected", "upSpeed": 1.2, "downSpeed": 5.8 }
+  }
+  ```
+- Use `systeminformation` npm package or Python `psutil` library
+- Frontend polls this endpoint every 5-10 seconds
+- For now, use **placeholder/mock data** to build the UI
+
+## Final Notes
+
+**Write code like you're building a production app for a Fortune 500 company.**
+- No shortcuts, no hacky solutions
+- Proper error handling everywhere
+- Clean, self-documenting code
+- Beautiful, pixel-perfect UI
+- Smooth animations at 60fps
+- Works flawlessly on all devices
+
+**Focus on creating an experience that feels premium, polished, and lightning-fast.**
+
+Good luck! Build something amazing.

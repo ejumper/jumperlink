@@ -1,0 +1,5 @@
+https://terminal.jumperlink.net/wetty "Terminal" "terminal.png"
+https://cloud.jumperlink.net/apps/files/files "Files" "files.png"
+https://cloud.jumperlink.net/apps/bookmarks/ "Bookmarks" "bookmarks.png"
+https://chat.jumperlink.net/ "AI" "AI.webp"
+https://media.jumperlink.net/ "Media" "media.webp"
