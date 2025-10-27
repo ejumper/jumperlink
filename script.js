@@ -279,8 +279,9 @@ let bookmarks = [];
 let bookmarkStructure = null;
 let isSearchMode = false;
 let isBrowserMode = false;
+let isBookmarkSearchMode = false;
 
-// Parse bookmark structure with folders
+// Parse bookmark structure with folders (recursive)
 function parseBookmarkStructure(doc) {
     const structure = {
         name: 'Bookmarks',
@@ -288,9 +289,77 @@ function parseBookmarkStructure(doc) {
         children: []
     };
 
+    // Recursive function to parse a DL element
+    function parseDL(dlElement) {
+        const children = [];
+
+        // Get DTs that are direct children (might be wrapped in P tag)
+        let dts = [];
+        const pTag = dlElement.querySelector(':scope > p');
+
+        // Check if P tag has children (sometimes P tag is empty and DTs are siblings)
+        if (pTag && pTag.children.length > 0) {
+            // Get only direct children of P tag, not nested ones
+            dts = Array.from(pTag.children).filter(el => el.tagName === 'DT');
+        } else {
+            // P tag is empty or doesn't exist - get DTs as direct children of DL
+            dts = Array.from(dlElement.children).filter(el => el.tagName === 'DT');
+        }
+
+        for (let dt of dts) {
+            // Check if this DT contains a folder (H3)
+            const h3 = dt.querySelector(':scope > h3');
+            if (h3) {
+                // This is a folder
+                const folder = {
+                    name: h3.textContent.trim(),
+                    type: 'folder',
+                    children: []
+                };
+
+                // Find the DL that contains this folder's contents
+                // It could be a child of the DT or the next sibling
+                let nestedDL = null;
+
+                // First check if DL is a child of the DT
+                nestedDL = dt.querySelector(':scope > dl');
+
+                // If not found, check if it's the next element sibling
+                if (!nestedDL) {
+                    let sibling = dt.nextSibling;
+                    while (sibling && sibling.nodeType !== 1) {
+                        sibling = sibling.nextSibling;
+                    }
+                    if (sibling && sibling.tagName === 'DL') {
+                        nestedDL = sibling;
+                    }
+                }
+
+                if (nestedDL) {
+                    // Recursively parse the nested folder
+                    folder.children = parseDL(nestedDL);
+                }
+
+                children.push(folder);
+            } else {
+                // This is a link
+                const link = dt.querySelector(':scope > a[href]');
+                if (link && link.href && link.href.startsWith('http')) {
+                    children.push({
+                        name: link.textContent.trim(),
+                        url: link.href,
+                        type: 'link'
+                    });
+                }
+            }
+        }
+
+        return children;
+    }
+
     const body = doc.body;
     if (body) {
-        // Parse top-level folders and links
+        // Find all top-level items
         const topLevelH3s = body.querySelectorAll(':scope > dt > h3, body > h3');
 
         topLevelH3s.forEach(h3 => {
@@ -299,53 +368,28 @@ function parseBookmarkStructure(doc) {
                 type: 'folder',
                 children: []
             };
-            structure.children.push(folder);
 
-            // Find the next DL sibling that contains this folder's contents
-            let nextEl = h3.parentElement.nextElementSibling;
-            if (nextEl && nextEl.tagName === 'DL') {
-                // Get direct child DTs of this DL only
-                const directDTs = Array.from(nextEl.children).filter(el => el.tagName === 'DT');
+            // Find the DL - it could be a sibling of the DT or a child of the DT
+            const dt = h3.parentElement;
+            let dlElement = null;
 
-                directDTs.forEach(dt => {
-                    // Check if this DT contains a nested folder (H3)
-                    const nestedH3 = dt.querySelector(':scope > h3');
-                    if (nestedH3) {
-                        // This is a nested folder
-                        const nestedFolder = {
-                            name: nestedH3.textContent.trim(),
-                            type: 'folder',
-                            children: []
-                        };
-                        folder.children.push(nestedFolder);
+            // First check if DL is a child of the DT (common in Netscape bookmarks)
+            dlElement = dt.querySelector(':scope > dl');
 
-                        // Find nested DL for this subfolder
-                        let nestedDL = dt.nextElementSibling;
-                        if (nestedDL && nestedDL.tagName === 'DL') {
-                            const nestedLinks = nestedDL.querySelectorAll('dt > a[href]');
-                            nestedLinks.forEach(link => {
-                                if (link.href && link.href.startsWith('http')) {
-                                    nestedFolder.children.push({
-                                        name: link.textContent.trim(),
-                                        url: link.href,
-                                        type: 'link'
-                                    });
-                                }
-                            });
-                        }
-                    } else {
-                        // This is a link
-                        const link = dt.querySelector(':scope > a[href]');
-                        if (link && link.href && link.href.startsWith('http')) {
-                            folder.children.push({
-                                name: link.textContent.trim(),
-                                url: link.href,
-                                type: 'link'
-                            });
-                        }
-                    }
-                });
+            // If not found, check if it's the next sibling
+            if (!dlElement) {
+                let nextEl = dt.nextElementSibling;
+                if (nextEl && nextEl.tagName === 'DL') {
+                    dlElement = nextEl;
+                }
             }
+
+            if (dlElement) {
+                // Recursively parse this folder
+                folder.children = parseDL(dlElement);
+            }
+
+            structure.children.push(folder);
         });
 
         // Also get root-level links (not in any folder)
@@ -500,19 +544,37 @@ function setupSearch() {
     const searchResults = document.getElementById('searchResults');
 
     // Toggle search mode
-    function enterSearchMode() {
+    function enterSearchMode(initialChar = '') {
         isSearchMode = true;
+        keyboardNavEnabled = false;
+        selectedIndex = 0;
+        document.querySelectorAll('.keyboard-selected').forEach(el => {
+            el.classList.remove('keyboard-selected');
+        });
         searchButton.style.display = 'none';
         searchInput.style.display = 'block';
         searchClose.style.display = 'flex';
         launcherGrid.style.display = 'none';
         searchResults.style.display = 'grid';
+
+        // Set initial character if provided
+        if (initialChar) {
+            searchInput.value = initialChar;
+            performSearch(initialChar);
+        } else {
+            performSearch('');
+        }
+
         searchInput.focus();
-        performSearch('');
     }
 
     function exitSearchMode() {
         isSearchMode = false;
+        keyboardNavEnabled = false;
+        selectedIndex = 0;
+        document.querySelectorAll('.keyboard-selected').forEach(el => {
+            el.classList.remove('keyboard-selected');
+        });
         searchButton.style.display = 'block';
         searchInput.style.display = 'none';
         searchClose.style.display = 'none';
@@ -570,38 +632,70 @@ function setupSearch() {
 
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
-        // Escape to exit search
-        if (e.key === 'Escape' && isSearchMode) {
-            exitSearchMode();
+        // When in search mode
+        if (isSearchMode) {
+            // Exit search on Escape
+            if (e.key === 'Escape') {
+                exitSearchMode();
+                return;
+            }
+
+            // Exit search when input is empty and certain keys are pressed
+            if (e.target === searchInput && searchInput.value === '') {
+                if (e.key === 'Backspace' || e.key === 'Delete' || e.key === 'Shift' || e.key === ' ') {
+                    e.preventDefault();
+                    exitSearchMode();
+                    return;
+                }
+            }
+
+            // Enter to open top result or search
+            if (e.key === 'Enter' && e.target === searchInput) {
+                const query = searchInput.value.trim();
+                const results = searchResults.querySelectorAll('.icon-container');
+
+                if (results.length > 0) {
+                    // Open top result
+                    results[0].click();
+                } else if (query) {
+                    // No results - search DuckDuckGo or chat
+                    if (e.shiftKey) {
+                        // Shift+Enter: Search chat
+                        window.open(`https://chat.jumperlink.net/?models=qwen/qwen3-vl-235b-a22b-thinking:online&q=${encodeURIComponent(query)}`, '_blank');
+                    } else {
+                        // Enter: Search DuckDuckGo
+                        window.open(`https://duckduckgo.com/?q=${encodeURIComponent(query)}`, '_blank');
+                    }
+                }
+            }
             return;
         }
 
-        // Space to trigger search (when not in search mode and not typing in input)
-        if (!isSearchMode && e.key === ' ') {
-            if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+        // When NOT in search mode - trigger search
+        if (!isSearchMode && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+            // Don't trigger if modifier keys are pressed (except Shift alone)
+            if (e.ctrlKey || e.metaKey || e.altKey) {
+                return;
+            }
+
+            // Trigger on letter keys (a-z, A-Z) - add the letter to search box
+            if (/^[a-zA-Z]$/.test(e.key)) {
+                e.preventDefault();
+                enterSearchMode(e.key);
+                return;
+            }
+
+            // Trigger on Space - but don't add space to search box initially
+            if (e.key === ' ') {
                 e.preventDefault();
                 enterSearchMode();
                 return;
             }
-        }
 
-        // Enter to open top result or search
-        if (isSearchMode && e.key === 'Enter' && e.target === searchInput) {
-            const query = searchInput.value.trim();
-            const results = searchResults.querySelectorAll('.icon-container');
-
-            if (results.length > 0) {
-                // Open top result
-                results[0].click();
-            } else if (query) {
-                // No results - search DuckDuckGo or chat
-                if (e.shiftKey) {
-                    // Shift+Enter: Search chat
-                    window.open(`https://chat.jumperlink.net/?model=qwen3-vl-235b-a22b-thinking:online&q=${encodeURIComponent(query)}`, '_blank');
-                } else {
-                    // Enter: Search DuckDuckGo
-                    window.open(`https://duckduckgo.com/?q=${encodeURIComponent(query)}`, '_blank');
-                }
+            // Trigger on Shift key press
+            if (e.key === 'Shift') {
+                enterSearchMode();
+                return;
             }
         }
     });
@@ -617,9 +711,29 @@ function setupBookmarkBrowser() {
     const launcherGrid = document.getElementById('launcherGrid');
     const searchButton = document.getElementById('searchButton');
     const searchClose = document.getElementById('searchClose');
+    const bookmarkSearchButton = document.getElementById('bookmarkSearchButton');
+    const bookmarkSearchInput = document.getElementById('bookmarkSearchInput');
 
     let currentFolder = null;
     let folderStack = [];
+
+    // Recursively collect all bookmarks from the structure
+    function collectAllBookmarks(folder) {
+        const allBookmarks = [];
+
+        function traverse(item) {
+            if (item.type === 'link') {
+                allBookmarks.push(item);
+            } else if (item.type === 'folder' && item.children) {
+                item.children.forEach(child => traverse(child));
+            }
+        }
+
+        const items = folder ? folder.children : (bookmarkStructure ? bookmarkStructure.children : []);
+        items.forEach(item => traverse(item));
+
+        return allBookmarks;
+    }
 
     function createFolderIcon(folder) {
         const container = document.createElement('div');
@@ -702,6 +816,78 @@ function setupBookmarkBrowser() {
         setupClickAnimation(bookmarkGrid, '.icon-container');
     }
 
+    function performBookmarkSearch(query) {
+        bookmarkGrid.innerHTML = '';
+        bookmarkPath.textContent = query ? `Search: "${query}"` : 'All Bookmarks';
+
+        const lowerQuery = query.toLowerCase().trim();
+
+        // Collect all bookmarks from the structure
+        const allBookmarks = collectAllBookmarks(bookmarkStructure);
+
+        // Filter bookmarks
+        const filtered = lowerQuery === ''
+            ? allBookmarks
+            : allBookmarks.filter(bookmark =>
+                bookmark.name.toLowerCase().includes(lowerQuery) ||
+                bookmark.url.toLowerCase().includes(lowerQuery)
+            );
+
+        // Display filtered results
+        filtered.forEach(bookmark => {
+            const icon = createBookmarkIcon(bookmark);
+            bookmarkGrid.appendChild(icon);
+        });
+
+        // Setup effects
+        setupDockEffect(bookmarkGrid, '.icon-container', 200, 0.4);
+        setupClickAnimation(bookmarkGrid, '.icon-container');
+    }
+
+    function enterBookmarkSearchMode() {
+        isBookmarkSearchMode = true;
+        keyboardNavEnabled = false;
+        selectedIndex = 0;
+        document.querySelectorAll('.keyboard-selected').forEach(el => {
+            el.classList.remove('keyboard-selected');
+        });
+
+        // Hide back button and bookmark search button
+        backButton.style.display = 'none';
+        bookmarkSearchButton.style.display = 'none';
+
+        // Show search input
+        bookmarkSearchInput.style.display = 'block';
+        bookmarkSearchInput.focus();
+
+        // Perform initial search (show all)
+        performBookmarkSearch('');
+    }
+
+    function exitBookmarkSearchMode() {
+        isBookmarkSearchMode = false;
+        keyboardNavEnabled = false;
+        selectedIndex = 0;
+        document.querySelectorAll('.keyboard-selected').forEach(el => {
+            el.classList.remove('keyboard-selected');
+        });
+
+        // Hide search input
+        bookmarkSearchInput.style.display = 'none';
+        bookmarkSearchInput.value = '';
+
+        // Show bookmark search button
+        bookmarkSearchButton.style.display = 'block';
+
+        // Return to current folder view
+        displayFolder(currentFolder);
+
+        // Restore back button if we're in a subfolder
+        if (folderStack.length > 0) {
+            backButton.style.display = 'block';
+        }
+    }
+
     function enterBrowserMode() {
         if (!bookmarkStructure) {
             console.log('No bookmarks loaded');
@@ -709,11 +895,18 @@ function setupBookmarkBrowser() {
         }
 
         isBrowserMode = true;
+        isBookmarkSearchMode = false;
+        keyboardNavEnabled = false;
+        selectedIndex = 0;
+        document.querySelectorAll('.keyboard-selected').forEach(el => {
+            el.classList.remove('keyboard-selected');
+        });
         currentFolder = null;
         folderStack = [];
 
         bookmarkButton.style.display = 'none';
         searchButton.style.display = 'none';
+        bookmarkSearchButton.style.display = 'block';
         searchClose.style.display = 'flex';
 
         launcherGrid.style.display = 'none';
@@ -725,26 +918,45 @@ function setupBookmarkBrowser() {
 
     function exitBrowserMode() {
         isBrowserMode = false;
+        isBookmarkSearchMode = false;
+        keyboardNavEnabled = false;
+        selectedIndex = 0;
+        document.querySelectorAll('.keyboard-selected').forEach(el => {
+            el.classList.remove('keyboard-selected');
+        });
 
         bookmarkButton.style.display = 'block';
         searchButton.style.display = 'block';
+        bookmarkSearchButton.style.display = 'none';
+        bookmarkSearchInput.style.display = 'none';
         searchClose.style.display = 'none';
 
         launcherGrid.style.display = 'grid';
         bookmarkBrowser.style.display = 'none';
 
         bookmarkGrid.innerHTML = '';
+        bookmarkSearchInput.value = '';
         currentFolder = null;
         folderStack = [];
     }
 
     // Event listeners
     bookmarkButton.addEventListener('click', enterBrowserMode);
+
+    bookmarkSearchButton.addEventListener('click', enterBookmarkSearchMode);
+
+    bookmarkSearchInput.addEventListener('input', (e) => {
+        performBookmarkSearch(e.target.value);
+    });
+
     searchClose.addEventListener('click', () => {
-        if (isBrowserMode) {
+        if (isBookmarkSearchMode) {
+            exitBookmarkSearchMode();
+        } else if (isBrowserMode) {
             exitBrowserMode();
         }
     });
+
     backButton.addEventListener('click', goBack);
 
     // Keyboard shortcuts for bookmark browser
@@ -757,14 +969,24 @@ function setupBookmarkBrowser() {
             }
         }
 
-        // Escape to exit browser mode or go back
+        // Escape to exit bookmark search mode or browser mode
         if (isBrowserMode && e.key === 'Escape') {
-            if (folderStack.length > 0) {
+            if (isBookmarkSearchMode) {
+                exitBookmarkSearchMode();
+            } else if (folderStack.length > 0) {
                 goBack();
             } else {
                 exitBrowserMode();
             }
             e.preventDefault();
+        }
+
+        // Enter to open top result in bookmark search mode
+        if (isBookmarkSearchMode && e.key === 'Enter' && e.target === bookmarkSearchInput) {
+            const results = bookmarkGrid.querySelectorAll('.icon-container');
+            if (results.length > 0) {
+                results[0].click();
+            }
         }
     });
 }
@@ -777,9 +999,18 @@ let selectedPanel = 'grid'; // 'grid' or 'panel'
 function setupKeyboardNavigation() {
     const launcherGrid = document.getElementById('launcherGrid');
     const sidePanel = document.getElementById('sidePanel');
+    const searchResults = document.getElementById('searchResults');
+    const bookmarkGrid = document.getElementById('bookmarkGrid');
 
     function getGridItems() {
-        return Array.from(launcherGrid.querySelectorAll('.icon-container'));
+        // Check which mode we're in
+        if (isSearchMode) {
+            return Array.from(searchResults.querySelectorAll('.icon-container'));
+        } else if (isBrowserMode) {
+            return Array.from(bookmarkGrid.querySelectorAll('.icon-container'));
+        } else {
+            return Array.from(launcherGrid.querySelectorAll('.icon-container'));
+        }
     }
 
     function getPanelItems() {
@@ -860,8 +1091,7 @@ function setupKeyboardNavigation() {
 
     // Keyboard event handler
     document.addEventListener('keydown', (e) => {
-        // Don't interfere with search or browser mode
-        if (isSearchMode || isBrowserMode) return;
+        // Don't interfere when typing in input fields
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
         // Arrow keys to enable and navigate
@@ -880,8 +1110,8 @@ function setupKeyboardNavigation() {
             moveSelection(direction);
         }
 
-        // Tab to toggle between grid and panel
-        if (e.key === 'Tab' && keyboardNavEnabled) {
+        // Tab to toggle between grid and panel (only in main mode, not in browser/search)
+        if (e.key === 'Tab' && keyboardNavEnabled && !isSearchMode && !isBrowserMode) {
             e.preventDefault();
             togglePanel();
         }
