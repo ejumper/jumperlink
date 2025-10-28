@@ -51,8 +51,6 @@ function createLauncherIcon(linkData) {
     const container = document.createElement('a');
     container.className = 'icon-container';
     container.href = linkData.url;
-    container.target = '_blank';
-    container.rel = 'noopener noreferrer';
 
     const iconImage = document.createElement('div');
     iconImage.className = 'icon-image';
@@ -83,8 +81,6 @@ function createPanelIcon(linkData) {
     const icon = document.createElement('a');
     icon.className = 'panel-icon';
     icon.href = linkData.url;
-    icon.target = '_blank';
-    icon.rel = 'noopener noreferrer';
     icon.title = linkData.displayName;
 
     const img = document.createElement('img');
@@ -145,6 +141,65 @@ function updateClock() {
     const clockElement = document.getElementById('clock');
     if (clockElement) {
         clockElement.textContent = `${timeStr} | ${dateStr}`;
+    }
+}
+
+// Theme management
+function initTheme() {
+    const themeToggle = document.getElementById('themeToggle');
+
+    // Get stored theme preference or use browser preference
+    function getPreferredTheme() {
+        const storedTheme = localStorage.getItem('theme');
+        if (storedTheme) {
+            return storedTheme;
+        }
+
+        // Check browser preference
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+            return 'light';
+        }
+
+        return 'dark';
+    }
+
+    // Apply theme to body and update toggle icon
+    function applyTheme(theme) {
+        if (theme === 'light') {
+            document.body.classList.add('light-mode');
+            document.body.classList.remove('dark-mode');
+            themeToggle.textContent = '☀';
+        } else {
+            document.body.classList.add('dark-mode');
+            document.body.classList.remove('light-mode');
+            themeToggle.textContent = '☾';
+        }
+    }
+
+    // Toggle between light and dark mode
+    function toggleTheme() {
+        const currentTheme = document.body.classList.contains('light-mode') ? 'light' : 'dark';
+        const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+
+        applyTheme(newTheme);
+        localStorage.setItem('theme', newTheme);
+    }
+
+    // Initialize theme on page load
+    const preferredTheme = getPreferredTheme();
+    applyTheme(preferredTheme);
+
+    // Set up toggle button click handler
+    themeToggle.addEventListener('click', toggleTheme);
+
+    // Listen for system theme changes (optional)
+    if (window.matchMedia) {
+        window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', (e) => {
+            // Only auto-switch if user hasn't manually set a preference
+            if (!localStorage.getItem('theme')) {
+                applyTheme(e.matches ? 'light' : 'dark');
+            }
+        });
     }
 }
 
@@ -265,7 +320,7 @@ function setupClickAnimation(container, iconSelector) {
                 setTimeout(() => {
                     // Navigate to link
                     if (href) {
-                        window.open(href, icon.target || '_self');
+                        window.location.href = href;
                     }
                 }, 80);
             }, 80);
@@ -274,6 +329,9 @@ function setupClickAnimation(container, iconSelector) {
 }
 
 // Global storage for all links
+let isRSSMode = false;
+let allRSSItems = [];
+const RSS_VISITED_KEY = 'rss_visited_items';
 let allLinks = [];
 let bookmarks = [];
 let bookmarkStructure = null;
@@ -484,9 +542,217 @@ async function loadBookmarks() {
         return [];
     }
 }
+// ==================== RSS FEED FUNCTIONALITY ====================
+
+// Nextcloud sync configuration
+const NEXTCLOUD_SYNC_URL = 'https://cloud.jumperlink.net/remote.php/dav/files/admin/Media/Books-Photos-Music/RSS/rss-visited.json';
+const NEXTCLOUD_AUTH = 'Basic ' + btoa('Admin:Giggling6&Request09Geometry6');
+
+async function getVisitedRSSItems() {
+    try {
+        // Try Nextcloud first
+        const response = await fetch(NEXTCLOUD_SYNC_URL, {
+            headers: { 'Authorization': NEXTCLOUD_AUTH }
+        });
+        if (response.ok) {
+            return await response.json();
+        }
+        // Fallback to localStorage
+        return JSON.parse(localStorage.getItem(RSS_VISITED_KEY) || '[]');
+    } catch (e) {
+        // Fallback to localStorage on error
+        return JSON.parse(localStorage.getItem(RSS_VISITED_KEY) || '[]');
+    }
+}
+
+async function markRSSItemVisited(url) {
+    try {
+        const visited = await getVisitedRSSItems();
+        if (!visited.includes(url)) {
+            visited.push(url);
+            // Save to Nextcloud
+            await fetch(NEXTCLOUD_SYNC_URL, {
+                method: 'PUT',
+                headers: { 
+                    'Authorization': NEXTCLOUD_AUTH,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(visited)
+            });
+            // Also save to localStorage as backup
+            localStorage.setItem(RSS_VISITED_KEY, JSON.stringify(visited));
+        }
+    } catch (e) {
+        console.error('Error syncing:', e);
+    }
+}
+
+
+async function parseOPML(path) {
+    try {
+        const response = await fetch(path);
+        const text = await response.text();
+        const parser = new DOMParser();
+        const xml = parser.parseFromString(text, 'text/xml');
+        const feeds = [];
+        xml.querySelectorAll('outline[xmlUrl]').forEach(outline => {
+            feeds.push({
+                title: outline.getAttribute('title') || outline.getAttribute('text') || 'Feed',
+                xmlUrl: outline.getAttribute('xmlUrl')
+            });
+        });
+        console.log(`Parsed ${feeds.length} feeds from OPML`);
+        return feeds;
+    } catch (error) {
+        console.error('Error parsing OPML:', error);
+        return [];
+    }
+}
+
+async function fetchFeed(feedUrl, feedTitle) {
+    try {
+        const proxy = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feedUrl)}`;
+        const response = await fetch(proxy);
+        const data = await response.json();
+        
+        if (data.status !== 'ok') return [];
+        
+        return (data.items || []).map(item => {
+            let imageUrl = item.thumbnail || item.enclosure?.link;
+            if (!imageUrl && item.description) {
+                const match = item.description.match(/<img[^>]+src="([^">]+)"/);
+                if (match) imageUrl = match[1];
+            }
+            if (!imageUrl) {
+                imageUrl = data.feed?.image || `https://www.google.com/s2/favicons?sz=64&domain=${new URL(feedUrl).hostname}`;
+            }
+            
+            return {
+                title: item.title || 'Untitled',
+                link: item.link || '#',
+                pubDate: new Date(item.pubDate || Date.now()),
+                feedTitle: data.feed?.title || feedTitle,
+                imageUrl
+            };
+        });
+    } catch (e) {
+        console.error(`Error fetching ${feedTitle}:`, e);
+        return [];
+    }
+}
+
+function formatRelativeTime(date) {
+    const diff = Date.now() - date;
+    const mins = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+    
+    if (mins < 1) return 'Just now';
+    if (mins < 60) return `${mins}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    if (days < 7) return `${days}d ago`;
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+async function displayRSS(items) {
+    const container = document.getElementById('rssFeedContainer');
+    if (!items.length) {
+        container.innerHTML = '<div class="rss-empty"><div class="rss-empty-icon">📭</div>No items</div>';
+        return;
+    }
+    
+const visited = await getVisitedRSSItems();
+    container.innerHTML = items.map(item => `
+        <a href="${item.link}" target="_blank" class="rss-feed-item ${visited.includes(item.link) ? 'visited' : ''}" data-url="${item.link}">
+            <div class="rss-feed-avatar">
+                ${item.imageUrl ? `<img src="${item.imageUrl}" alt="${item.feedTitle}" onerror="this.parentElement.innerHTML='<div class=\\'rss-feed-avatar-fallback\\'>📰</div>'">` : '<div class="rss-feed-avatar-fallback">📰</div>'}
+            </div>
+            <div class="rss-feed-content">
+                <div class="rss-feed-source">${item.feedTitle}</div>
+                <div class="rss-feed-title">${item.title}</div>
+                <div class="rss-feed-date">${formatRelativeTime(item.pubDate)}</div>
+            </div>
+        </a>
+    `).join('');
+    
+    container.querySelectorAll('.rss-feed-item').forEach(el => {
+        el.addEventListener('click', () => {
+            markRSSItemVisited(el.dataset.url);
+            el.classList.add('visited');
+        });
+    });
+}
+
+async function loadRSS() {
+    const container = document.getElementById('rssFeedContainer');
+    container.innerHTML = '<div class="rss-loading">Loading feeds... 📡</div>';
+    
+    try {
+        const feeds = await parseOPML('rss feed/feeeed.opml');
+        const results = await Promise.all(feeds.map(f => fetchFeed(f.xmlUrl, f.title)));
+        allRSSItems = results.flat().sort((a, b) => b.pubDate - a.pubDate);
+        displayRSS(allRSSItems);
+    } catch (e) {
+        console.error('Error loading RSS:', e);
+        container.innerHTML = '<div class="rss-empty"><div class="rss-empty-icon">⚠️</div>Error loading</div>';
+    }
+}
+
+function setupRSS() {
+    const rssBtn = document.getElementById('rssButton');
+    const closeBtn = document.getElementById('searchClose');
+    
+    // Add debugging
+    console.log('setupRSS called');
+    console.log('RSS button found:', rssBtn);
+    console.log('Close button found:', closeBtn);
+    
+    // Safety check - exit if button doesn't exist
+    if (!rssBtn) {
+        console.error('ERROR: rssButton element not found in HTML!');
+        return;
+    }
+    
+    function enterRSSMode() {
+        console.log('Entering RSS mode');
+        isRSSMode = true;
+        isSearchMode = false;
+        isBrowserMode = false;
+        isBookmarkSearchMode = false;
+        keyboardNavEnabled = false;
+        selectedIndex = 0;
+        
+        document.querySelectorAll('.keyboard-selected').forEach(el => {
+            el.classList.remove('keyboard-selected');
+        });
+        
+        document.getElementById('rssButton').style.display = 'none';
+        document.getElementById('searchButton').style.display = 'none';
+        document.getElementById('bookmarkButton').style.display = 'none';
+        document.getElementById('searchInput').style.display = 'none';
+        document.getElementById('launcherGrid').style.display = 'none';
+        document.getElementById('searchResults').style.display = 'none';
+        document.getElementById('bookmarkBrowser').style.display = 'none';
+        closeBtn.style.display = 'flex';
+        document.getElementById('rssFeedContainer').style.display = 'flex';
+        
+        if (!allRSSItems.length) loadRSS();
+        else displayRSS(allRSSItems);
+    }
+    
+    console.log('Attaching click listener to RSS button');
+    rssBtn.addEventListener('click', enterRSSMode);
+    console.log('RSS button click listener attached successfully');
+}
+
+
+// ==================== END RSS FUNCTIONALITY ====================
 
 // Initialize the launcher
 async function init() {
+    // Initialize theme
+    initTheme();
+
     // Set random background on load
     setRandomBackground();
 
@@ -533,6 +799,13 @@ async function init() {
 
     // Setup keyboard navigation
     setupKeyboardNavigation();
+
+    // Setup global keyboard shortcuts
+    setupGlobalKeyboardShortcuts();
+
+    // Setup RSS feed
+    setupRSS();
+
 }
 
 // Search functionality
@@ -612,10 +885,21 @@ function setupSearch() {
             console.log(`Search query: "${query}", Apps found: ${filtered.length === allLinks.length ? 'showing all' : filtered.length}, Total bookmarks available: ${bookmarks.length}`);
         }
 
-        filtered.forEach(linkData => {
-            const icon = createLauncherIcon(linkData);
-            searchResults.appendChild(icon);
+            // Add RSS feed option if query matches
+    if ('feed'.includes(lowerQuery) || 'rss'.includes(lowerQuery)) {
+        const feedOption = createLauncherIcon({
+            url: '#',
+            displayName: 'RSS Feed',
+            imagePath: ''
         });
+        feedOption.querySelector('.icon-image').innerHTML = '<div style="font-size: 48px;">📰</div>';
+        feedOption.addEventListener('click', (e) => {
+            e.preventDefault();
+            document.getElementById('rssButton').click();
+        });
+        searchResults.appendChild(feedOption);
+    }
+
 
         // Setup effects for search results
         setupDockEffect(searchResults, '.icon-container', 200, 0.4);
@@ -624,7 +908,7 @@ function setupSearch() {
 
     // Event listeners
     searchButton.addEventListener('click', enterSearchMode);
-    searchClose.addEventListener('click', exitSearchMode);
+    // Close button handler moved to setupBookmarkBrowser to handle all modes
 
     searchInput.addEventListener('input', (e) => {
         performSearch(e.target.value);
@@ -634,6 +918,13 @@ function setupSearch() {
     document.addEventListener('keydown', (e) => {
         // When in search mode
         if (isSearchMode) {
+            // Ignore Ctrl+F / Cmd+F in search mode
+            if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+
             // Exit search on Escape
             if (e.key === 'Escape') {
                 exitSearchMode();
@@ -642,7 +933,7 @@ function setupSearch() {
 
             // Exit search when input is empty and certain keys are pressed
             if (e.target === searchInput && searchInput.value === '') {
-                if (e.key === 'Backspace' || e.key === 'Delete' || e.key === 'Shift' || e.key === ' ') {
+                if (e.key === 'Backspace' || e.key === 'Delete' || e.key === ' ') {
                     e.preventDefault();
                     exitSearchMode();
                     return;
@@ -672,12 +963,7 @@ function setupSearch() {
         }
 
         // When NOT in search mode - trigger search
-        if (!isSearchMode && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
-            // Don't trigger if modifier keys are pressed (except Shift alone)
-            if (e.ctrlKey || e.metaKey || e.altKey) {
-                return;
-            }
-
+        if (!isSearchMode && !isBrowserMode && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
             // Trigger on letter keys (a-z, A-Z) - add the letter to search box
             if (/^[a-zA-Z]$/.test(e.key)) {
                 e.preventDefault();
@@ -685,15 +971,16 @@ function setupSearch() {
                 return;
             }
 
-            // Trigger on Space - but don't add space to search box initially
+            // Trigger on Space to open search
             if (e.key === ' ') {
                 e.preventDefault();
                 enterSearchMode();
                 return;
             }
 
-            // Trigger on Shift key press
-            if (e.key === 'Shift') {
+            // Trigger on "/" to open search
+            if (e.key === '/') {
+                e.preventDefault();
                 enterSearchMode();
                 return;
             }
@@ -906,6 +1193,7 @@ function setupBookmarkBrowser() {
 
         bookmarkButton.style.display = 'none';
         searchButton.style.display = 'none';
+        document.getElementById('rssButton').style.display = 'none';
         bookmarkSearchButton.style.display = 'block';
         searchClose.style.display = 'flex';
 
@@ -927,6 +1215,7 @@ function setupBookmarkBrowser() {
 
         bookmarkButton.style.display = 'block';
         searchButton.style.display = 'block';
+        document.getElementById('rssButton').style.display = 'block';
         bookmarkSearchButton.style.display = 'none';
         bookmarkSearchInput.style.display = 'none';
         searchClose.style.display = 'none';
@@ -949,23 +1238,45 @@ function setupBookmarkBrowser() {
         performBookmarkSearch(e.target.value);
     });
 
-    searchClose.addEventListener('click', () => {
-        if (isBookmarkSearchMode) {
-            exitBookmarkSearchMode();
-        } else if (isBrowserMode) {
-            exitBrowserMode();
-        }
-    });
+searchClose.addEventListener('click', () => {
+    if (isRSSMode) {
+        isRSSMode = false;
+        document.getElementById('rssButton').style.display = 'block';
+        document.getElementById('searchButton').style.display = 'block';
+        document.getElementById('bookmarkButton').style.display = 'block';
+        document.getElementById('rssFeedContainer').style.display = 'none';
+        document.getElementById('launcherGrid').style.display = 'grid';
+        searchClose.style.display = 'none';
+    } else if (isBookmarkSearchMode) {
+        exitBookmarkSearchMode();
+    } else if (isBrowserMode) {
+        exitBrowserMode();
+    }
+});
+
 
     backButton.addEventListener('click', goBack);
 
     // Keyboard shortcuts for bookmark browser
     document.addEventListener('keydown', (e) => {
-        // Ctrl/Cmd or Alt/Opt to trigger bookmark browser
-        if (!isSearchMode && !isBrowserMode && (e.ctrlKey || e.metaKey || e.altKey)) {
-            if (e.key === 'Control' || e.key === 'Meta' || e.key === 'Alt') {
-                enterBrowserMode();
+        // Enter to trigger bookmark browser when not in any mode
+        if (!isSearchMode && !isBrowserMode && e.key === 'Enter' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+            enterBrowserMode();
+            e.preventDefault();
+            return;
+        }
+
+        // Backspace and Alt+Up to go back in bookmark browser
+        if (isBrowserMode && !isBookmarkSearchMode) {
+            if (e.key === 'Backspace' || (e.altKey && e.key === 'ArrowUp')) {
                 e.preventDefault();
+                if (folderStack.length > 0) {
+                    goBack();
+                } else {
+                    // On home page, exit browser mode
+                    exitBrowserMode();
+                }
+                return;
             }
         }
 
@@ -1128,6 +1439,46 @@ function setupKeyboardNavigation() {
             keyboardNavEnabled = false;
             clearSelection();
         }
+    });
+}
+
+// Global keyboard shortcuts
+function setupGlobalKeyboardShortcuts() {
+    document.addEventListener('keydown', (e) => {
+        // Shift+Escape to toggle theme
+        if (e.key === 'Escape' && e.shiftKey) {
+            e.preventDefault();
+            const themeToggle = document.getElementById('themeToggle');
+            if (themeToggle) {
+                themeToggle.click();
+            }
+            return;
+        }
+
+        // Ctrl+F or Cmd+F to trigger search mode
+        if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            if (!isSearchMode && !isBrowserMode) {
+                const searchButton = document.getElementById('searchButton');
+                if (searchButton) {
+                    searchButton.click();
+                }
+            }
+            return;
+        }
+        // Panel link shortcuts 1-9 (only in normal mode)
+        if (!isSearchMode && !isBrowserMode && !isRSSMode && !isBookmarkSearchMode) {
+            if (e.key >= '1' && e.key <= '9') {
+                const panelIcons = document.querySelectorAll('.panel-icon');
+                const index = parseInt(e.key) - 1;
+                if (panelIcons[index]) {
+                    window.open(panelIcons[index].href, '_blank');
+                }
+            }
+        }
+
     });
 }
 

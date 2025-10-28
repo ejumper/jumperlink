@@ -3,38 +3,51 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>desktop</title>
-    <link rel="icon" type="image/png" href="icons/desktop.png">
+    <title>Launcher</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="top-panel">
-        <div id="clock" class="clock"></div>
-    </div>
-
-    <div class="main-content">
+    <!-- Theme Toggle -->
+    <button id="themeToggle" class="theme-toggle" title="Toggle Theme">☾</button>
+    
+    <!-- Clock (at top) -->
+    <div class="clock" id="clock">08:08 PM | Mon, 10/27</div>
+    
+    <!-- Main Content Area -->
+    <div class="main-content" id="mainContent">
+        <!-- Launcher Grid -->
         <div class="launcher-grid" id="launcherGrid"></div>
-        <div class="search-results" id="searchResults" style="display: none;"></div>
-        <div class="bookmark-browser" id="bookmarkBrowser" style="display: none;">
+        
+        <!-- Search Results -->
+        <div class="search-results" id="searchResults"></div>
+        
+        <!-- RSS Feed Container -->
+        <div class="rss-feed-container" id="rssFeedContainer"></div>
+        
+        <!-- Bookmark Browser -->
+        <div class="bookmark-browser" id="bookmarkBrowser">
             <div class="bookmark-nav">
-                <button class="back-button" id="backButton" style="display: none;">← Back</button>
-                <span class="bookmark-path" id="bookmarkPath">Bookmarks</span>
+                <button id="backButton" class="nav-button" style="display: none;">← Back</button>
+                <div id="bookmarkPath" class="bookmark-path">Bookmarks</div>
+                <button id="bookmarkSearchButton" class="search-button" title="Search Bookmarks">🔍</button>
+                <input type="text" id="bookmarkSearchInput" class="search-input" placeholder="Search bookmarks..." style="display: none;">
             </div>
             <div class="bookmark-grid" id="bookmarkGrid"></div>
         </div>
     </div>
-
-    <div class="search-container" id="searchContainer">
-        <button class="search-button" id="searchButton">🔍</button>
-        <button class="bookmark-button" id="bookmarkButton">🗂️</button>
-        <input type="text" class="search-input" id="searchInput" placeholder="Search..." style="display: none;">
-        <button class="bookmark-search-button" id="bookmarkSearchButton" style="display: none;">🔍</button>
-        <input type="text" class="bookmark-search-input" id="bookmarkSearchInput" placeholder="Search bookmarks..." style="display: none;">
-        <button class="search-close" id="searchClose" style="display: none;">✕</button>
+    
+    <!-- Search Container (above bottom panel) -->
+    <div class="search-container">
+        <button id="rssButton" class="rss-button" title="RSS Feed">📰</button>
+        <button id="searchButton" class="search-button" title="Search">🔍</button>
+        <input type="text" id="searchInput" class="search-input" placeholder="Search apps and bookmarks..." style="display: none;">
+        <button id="bookmarkButton" class="bookmark-button" title="Bookmarks">🗂️</button>
+        <button id="searchClose" class="search-button" title="Close" style="display: none;">✕</button>
     </div>
-
+    
+    <!-- Side Panel (bottom) -->
     <div class="side-panel" id="sidePanel"></div>
-
+    
     <script src="script.js"></script>
 </body>
 </html>
