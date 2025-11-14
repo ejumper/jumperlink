@@ -172,7 +172,7 @@ subtitle {
 
 overview {
     grid-area: overview;
-    outline: 2px solid outline: 2px solid hsla(120, 100%, 50%, var(--outline));;
+    outline: 2px solid hsla(120, 100%, 50%, var(--outline));;
     overflow: auto;
     padding: 1rem;
     min-height: 0;
