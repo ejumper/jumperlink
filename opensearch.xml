@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/">
+  <ShortName>Jumperlink</ShortName>
+  <Description>Search Wikipedia articles and bookmarks through Jumperlink Dashboard</Description>
+  <Tags>search wikipedia bookmarks dashboard</Tags>
+  <Contact>admin@jumperlink.net</Contact>
+  <Url type="text/html" template="https://yourdomain.com/?q={searchTerms}"/>
+  <Url type="application/opensearchdescription+xml" rel="self" template="https://yourdomain.com/opensearch.xml"/>
+  <Image height="16" width="16" type="image/x-icon">https://yourdomain.com/favicon.ico</Image>
+  <InputEncoding>UTF-8</InputEncoding>
+  <SearchForm>https://yourdomain.com/</SearchForm>
+</OpenSearchDescription>

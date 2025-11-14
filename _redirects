@@ -1,0 +1,3 @@
+# Cloudflare Pages redirect rules for client-side routing
+# This ensures all URLs serve index.html while maintaining the URL path
+/* /index.html 200

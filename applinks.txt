@@ -1,0 +1,32 @@
+files
+https://cloud.jumperlink.net/apps/notes/note/101960?new "files" "folder.webp"
+tasks
+https://cloud.jumperlink.net/apps/tasks "tasks" "tasks.webp"
+terminal
+https://terminal.jumperlink.net/wetty "terminal" "terminal.webp"
+jellyfin
+https://media.jumperlink.net/ "tv" "jellyfin.png"
+mail
+https://mail.proton.me "mail" "protonmail.svg"
+openwebui
+https://chat.jumperlink.net "ollama" "ollama.svg"
+code
+https://code.jumperlink.net "code" "code.webp"
+n8n
+https://n8n.jumperlink.net "n8n" "n8n.webp"
+flowise
+https://ai.jumperlink.net "flowise" "flowise.webp"
+canva
+https://www.canva.com/ "canva"  "canva.webp"
+claude
+https://claude.ai "claude" "claude.webp"
+perplexity
+https://perplexity.ai "perplexity" "perplexity.webp"
+openrouter
+https://openrouter.ai "openrouter" "openrouter.webp"
+drive
+https://drive.proton.me "drive" "drive.webp"
+password
+https://.proton.me "passwords" "pass.webp"
+github
+https://github.com/ "github" "github.webp"

@@ -1,0 +1,4 @@
+https://cloud.jumperlink.net/apps/files/files "files" "folder.svg"
+https://cloud.jumperlink.net/apps/bookmarks "bookmarks" "bookmarks.svg"
+https://cloud.jumperlink.net/apps/news/all "rss" "rss.svg"
+https://code.jumperlink.net/apps/files/files/84571?dir=/Jumperpedia "Codium" "codium.svg"

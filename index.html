@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jumperlink</title>
+    <meta name="description" content="Personal dashboard with Wikipedia search, RSS feeds, and bookmarks">
+
+    <!-- OpenSearch for custom search engine -->
+    <link rel="search" type="application/opensearchdescription+xml" title="Jumperlink Search" href="/opensearch.xml">
+
+    <!-- Open Graph meta tags for better link sharing -->
+    <meta property="og:title" content="Jumperlink Dashboard">
+    <meta property="og:description" content="Personal dashboard with Wikipedia search, RSS feeds, and bookmarks">
+    <meta property="og:type" content="website">
+
+    <link rel="stylesheet" href="body.css">
+</head>
+<body>
+    <top>
+        <header>
+            <search-container>
+                <button class="search-trigger" aria-label="Open search">🔍</button>
+            </search-container>
+            <main-text>
+                <page-title>
+                    <div class="page-title-display">
+                        <p>Title or Search</p>
+                    </div>
+                    <input type="text" id="searchbox" class="page-title-input" placeholder="Search...">
+                </page-title>
+                <subtitle><p>subtitle</p></subtitle>
+            </main-text>
+        </header>
+        <overview></overview>
+    </top>
+    <bottom>
+        <text></text>
+        <links>
+            <dock></dock>
+            <search-container>
+                <button class="search-trigger" aria-label="Open search">🔍</button>
+            </search-container>
+        </links>
+    </bottom>
+    <script src="script.js"></script>
+</body>
+</html>
