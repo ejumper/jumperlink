@@ -57,7 +57,7 @@
 
 
 :root {
-    --outline: 1;
+    --outline: 0;
     --background: hsla(240, 100%, 50%, .15);
 
     /* Color scheme variables */
@@ -167,7 +167,7 @@
 
 body {
     display: grid;
-    grid-template-rows: 4fr 3fr;
+    grid-template-rows: 1fr auto;
     grid-template-areas:
         "top"
         "bottom";
@@ -206,7 +206,7 @@ bottom {
     grid-area: bottom;
     outline: 2px solid hsla(220, 100%, 50%, var(--outline));
     display: grid;
-    grid-template-rows: 3fr 1fr;
+    grid-template-rows: auto 1fr;
     grid-template-areas:
         "text"
         "links";
@@ -578,6 +578,7 @@ text {
     overflow: auto;
     padding: 1rem;
     min-height: 0;
+    max-height: 40vh;
 }
 
 .bookmark-tree {
@@ -698,6 +699,7 @@ links {
     text {
         overflow: visible;
         padding-bottom: 0.5rem;
+        max-height: 66vh;
     }
 
     links {
