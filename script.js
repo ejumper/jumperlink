@@ -1145,7 +1145,7 @@ function displayViewToggle() {
 function displayTimerToggleButton() {
     return `
         <button class="timer-toggle-btn${STATE.timerPanelVisible ? ' active' : ''}" type="button">
-            ⏱ Timers
+            ⏱
         </button>
     `;
 }

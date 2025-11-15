@@ -655,7 +655,6 @@ dock {
     padding: 0.6rem 0.5rem 0.75rem;
     margin-bottom: 0.75rem;
     background: rgba(0, 0, 0, 0);
-    backdrop-filter: blur(0px);
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     outline: 2px solid hsla(270, 100%, 50%, var(--outline));
 }
@@ -674,7 +673,6 @@ overview .feed-controls:first-child {
     border-radius: 12px;
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
-    
 }
 
 .timer-panel.open {
@@ -855,10 +853,6 @@ overview .feed-controls:first-child {
     padding: 0.4rem;
     color: rgba(255, 255, 255, 0.5);
     font-size: 0.85rem;
-}
-
-.timer-empty.timer-error {
-    color: #ffb4b4;
 }
 
 @keyframes timerFlash {
