@@ -57,7 +57,7 @@
 
 
 :root {
-    --outline: 0;
+    --outline: 1;
     --background: hsla(240, 100%, 50%, .15);
 
     /* Color scheme variables */
@@ -318,7 +318,7 @@ overview {
     grid-area: overview;
     outline: 2px solid hsla(120, 100%, 50%, var(--outline));;
     overflow: auto;
-    padding: 1rem;
+    padding: 0 1rem 1rem 1rem;
     min-height: 0;
 }
 
@@ -765,7 +765,7 @@ dock {
 }
 
 overview .feed-controls:first-child {
-    margin-top: -1rem;
+    margin-top: 0;
 }
 
 .timer-panel {

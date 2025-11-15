@@ -1952,7 +1952,19 @@ function buildBookmarkTree(bookmarks, level = 0) {
                 </details>
             `;
         } else {
-            const iconSrc = escapeHtml(item.icon || FALLBACK_FAVICON);
+            // Extract domain for fresh favicon, ignore embedded data URIs
+            let domain = '';
+            try {
+                const url = new URL(item.url);
+                domain = url.hostname;
+            } catch (e) {
+                domain = '';
+            }
+
+            const iconSrc = domain
+                ? `https://www.google.com/s2/favicons?domain=${domain}&sz=64`
+                : FALLBACK_FAVICON;
+
             return `
                 <a class="bookmark-link" href="${escapeHtml(item.url)}" target="_blank">
                     <span class="bookmark-name">${escapeHtml(item.name)}</span>
