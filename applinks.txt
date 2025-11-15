@@ -3,9 +3,9 @@ https://cloud.jumperlink.net/apps/notes/note/101960?new "files" "folder.webp"
 tasks
 https://cloud.jumperlink.net/apps/tasks "tasks" "tasks.webp"
 terminal
-https://terminal.jumperlink.net/wetty "terminal" "terminal.webp"
+https://terminal.jumperlink.net/wetty "terminal" "terminal.avif"
 jellyfin
-https://media.jumperlink.net/ "tv" "jellyfin.png"
+https://media.jumperlink.net/ "tv" "jellyfin.webp"
 mail
 https://mail.proton.me "mail" "protonmail.svg"
 openwebui
@@ -25,8 +25,8 @@ https://perplexity.ai "perplexity" "perplexity.webp"
 openrouter
 https://openrouter.ai "openrouter" "openrouter.webp"
 drive
-https://drive.proton.me "drive" "drive.webp"
+https://drive.proton.me "drive" "protondrive.svg"
 password
-https://.proton.me "passwords" "pass.webp"
+https://.proton.me "passwords" "protonpass.svg"
 github
 https://github.com/ "github" "github.webp"

@@ -58,6 +58,7 @@
 
 :root {
     --outline: 0;
+    --linear-gradient: linear-gradient(hsla(200, 100%, 50%, 0.3) 0%, hsla(243, 100%, 50%, 0.1) 10%, hsla(240, 100%, 20%, .05) 70%, hsla(200, 100%, 21%, .25) 97%);
 }
 
 
@@ -165,9 +166,52 @@ page-title {
     font-size: 1.8rem;
 }
 
+page-title a {
+    cursor: pointer;
+    transition: color 0.2s ease;
+}
+
+page-title a:hover {
+    color: #7bb8ff;
+}
+
+.clock-toggle {
+    background: transparent;
+    border: none;
+    color: inherit;
+    font: inherit;
+    font-size: 2.6rem;
+    cursor: pointer;
+    padding: 0;
+    text-align: left;
+    transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.clock-toggle:hover {
+    transform: translateY(-1px);
+}
+
+.clock-toggle.active {
+    color: #7ab044;
+}
+
+.clock-toggle:focus-visible {
+    outline: 2px solid rgba(122, 176, 68, 0.5);
+    outline-offset: 4px;
+}
+
 subtitle {
     grid-area: subtitle;
     outline: 2px solid hsla(70, 100%, 50%, var(--outline));
+}
+
+subtitle a {
+    cursor: pointer;
+    transition: color 0.2s ease;
+}
+
+subtitle a:hover {
+    color: #7bb8ff;
 }
 
 overview {
@@ -176,6 +220,18 @@ overview {
     overflow: auto;
     padding: 1rem;
     min-height: 0;
+}
+
+overview a,
+overview a:visited,
+text a,
+text a:visited {
+    color: #7bb8ff;
+}
+
+overview a:hover,
+text a:hover {
+    color: #a7d6ff;
 }
 
 header search-container {
@@ -245,37 +301,59 @@ body.task-modal-open {
 .quick-search-links {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-    padding: 1rem;
+    gap: 0;
+    padding: 0;
 }
 
 .quick-search-links a {
     color: #4a9eff;
     text-decoration: none;
-    padding: 0.5rem;
-    background: #1a1a1a;
-    border-radius: 4px;
-    text-align: center;
+    padding: 0.75rem;
+    background: transparent;
+    border-bottom: 1px solid #333;
+    cursor: pointer;
+    transition: background 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    justify-content: flex-start;
+    width: 100%;
+}
+
+.quick-search-links span {
+    flex: 1;
+    text-align: left;
 }
 
 .quick-search-links a:hover {
-    background: #222;
+    background: #2a2a2a;
 }
 
 .quick-task-btn {
-    padding: 0.6rem;
-    border-radius: 4px;
-    border: 1px solid #4a9eff;
+    padding: 0.75rem;
+    border: none;
+    border-bottom: 1px solid #333;
     background: transparent;
     color: #4a9eff;
     cursor: pointer;
     font-size: 1rem;
-    transition: background 0.2s ease, color 0.2s ease;
+    transition: background 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    justify-content: flex-start;
+    width: 100%;
+    text-align: left;
 }
 
 .quick-task-btn:hover {
-    background: #4a9eff;
-    color: #041024;
+    background: #2a2a2a;
+}
+
+.quick-search-links img {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
 }
 
 #task-modal {
@@ -322,6 +400,32 @@ body.task-modal-open {
     color: #fff;
     font-size: 1.5rem;
     cursor: pointer;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.close-icon {
+    width: 48px;
+    height: 48px;
+    display: block;
+    object-fit: contain;
+}
+
+.search-icon {
+    width: 48px;
+    height: 48px;
+    display: block;
+    object-fit: contain;
+}
+
+@media (min-aspect-ratio: 1.1/1) {
+    .close-icon,
+    .search-icon {
+        width: 40px;
+        height: 40px;
+    }
 }
 
 #task-form label {
@@ -374,6 +478,91 @@ text {
     overflow: auto;
     padding: 1rem;
     min-height: 0;
+}
+
+.bookmark-tree {
+    text-align: right;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+details.bookmark-folder {
+    width: 100%;
+    padding: 0.1rem 0;
+}
+
+details.bookmark-folder > summary {
+    cursor: pointer;
+    padding: 0.4rem;
+    color: #cfd3db;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: relative;
+    list-style: none;
+    border: 2px solid hsla(212, 30%, 30%, 1);
+    border-radius: 4px;
+}
+
+details.bookmark-folder > summary::marker,
+details.bookmark-folder > summary::-webkit-details-marker {
+    display: none;
+    content: '';
+}
+
+details.bookmark-folder > summary .folder-name {
+    flex: 1;
+    text-align: center;
+}
+
+details.bookmark-folder > summary .folder-icon {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+    transition: transform 0.15s ease;
+}
+
+details.bookmark-folder[open] > summary .folder-icon {
+    transform: rotate(90deg);
+}
+
+.bookmark-children {
+    text-align: right;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding-right: 1.5rem;
+}
+
+.bookmark-link {
+    padding: 0.4rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.4rem;
+    color: hsl(212, 100%, 65%);
+    text-decoration: none;
+    border-radius: 4px;
+    transition: background 0.15s ease;
+}
+
+.bookmark-link:hover {
+    background: rgba(74, 158, 255, 0.1);
+}
+
+.bookmark-name {
+    flex: 1;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bookmark-favicon {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
 }
 
 links {
@@ -465,10 +654,223 @@ dock {
     gap: 0.5rem;
     padding: 0.6rem 0.5rem 0.75rem;
     margin-bottom: 0.75rem;
-    background: rgba(0, 0, 0, 0.9);
-    backdrop-filter: blur(6px);
+    background: rgba(0, 0, 0, 0);
+    backdrop-filter: blur(0px);
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     outline: 2px solid hsla(270, 100%, 50%, var(--outline));
+}
+
+overview .feed-controls:first-child {
+    margin-top: -1rem;
+}
+
+.timer-panel {
+    display: none;
+    flex-direction: column;
+    gap: 0.6rem;
+    padding: 0.75rem;
+    background: rgba(5, 8, 16, 0.78);
+    border: 1px solid rgba(122, 176, 68, 0.25);
+    border-radius: 12px;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    
+}
+
+.timer-panel.open {
+    display: flex;
+}
+
+.timer-add-form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: flex-end;
+}
+
+.timer-label-input {
+    flex: 1.5 1 200px;
+    padding: 0.55rem 0.75rem;
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: white;
+    font-size: 0.95rem;
+}
+
+.timer-countdown-inputs {
+    flex: 2 1 320px;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(70px, 1fr));
+    gap: 0.35rem;
+}
+
+.timer-countdown-inputs select {
+    width: 100%;
+    padding: 0.45rem;
+    background: rgba(0, 0, 0, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    color: #dfe6ff;
+    font-size: 0.85rem;
+}
+
+.timer-date-picker {
+    flex: 1.2 1 200px;
+}
+
+.timer-date-input {
+    width: 100%;
+    padding: 0.5rem 0.65rem;
+    background: rgba(0, 0, 0, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    color: #dfe6ff;
+}
+
+.timer-date-input:disabled,
+.timer-countdown-inputs select:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.timer-add-btn {
+    flex: 0 0 auto;
+    padding: 0.55rem 1.2rem;
+    border-radius: 999px;
+    border: 1px solid #7ab044;
+    background: linear-gradient(135deg, rgba(122, 176, 68, 0.8), rgba(122, 176, 68, 0.5));
+    color: #041b08;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+}
+
+.timer-add-btn:hover {
+    transform: translateY(-1px);
+}
+
+.timer-lists {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.timer-list {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 10px;
+    padding: 0.5rem;
+}
+
+.timer-list-header {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #a5b4ff;
+    margin-bottom: 0.35rem;
+}
+
+.timer-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 0.6rem;
+    margin-bottom: 0.4rem;
+    border-radius: 10px;
+    background: rgba(12, 16, 28, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    position: relative;
+    overflow: hidden;
+}
+
+.timer-row:last-child {
+    margin-bottom: 0;
+}
+
+.timer-row-main {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.timer-name {
+    font-weight: 600;
+    color: #f1f5ff;
+}
+
+.timer-remaining {
+    font-family: 'MonoLisa', 'Input', monospace;
+    color: #9bc9ff;
+}
+
+.timer-progress-fill {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, rgba(122, 176, 68, 0.35), rgba(74, 158, 255, 0.35));
+    opacity: 0.35;
+    width: 0%;
+    transition: width 0.3s ease;
+}
+
+.timer-row-main,
+.timer-row-actions {
+    position: relative;
+    z-index: 1;
+}
+
+.timer-row-actions {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+
+.timer-action-btn {
+    padding: 0.35rem 0.8rem;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.05);
+    color: #dfe6ff;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.timer-action-btn:hover {
+    background: rgba(74, 158, 255, 0.2);
+    border-color: rgba(74, 158, 255, 0.4);
+}
+
+.timer-row--finishing {
+    animation: timerFlash 1s ease-in-out infinite;
+}
+
+.timer-row--finished {
+    background: rgba(20, 10, 0, 0.75);
+    border-color: rgba(255, 168, 0, 0.4);
+}
+
+.timer-empty {
+    padding: 0.4rem;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.85rem;
+}
+
+.timer-empty.timer-error {
+    color: #ffb4b4;
+}
+
+@keyframes timerFlash {
+    0% {
+        box-shadow: 0 0 5px rgba(122, 176, 68, 0.2);
+    }
+    50% {
+        box-shadow: 0 0 18px rgba(122, 176, 68, 0.6);
+    }
+    100% {
+        box-shadow: 0 0 5px rgba(122, 176, 68, 0.2);
+    }
 }
 
 .feed-folder-menu {
@@ -476,28 +878,36 @@ dock {
     flex-wrap: wrap;
     gap: 0.5rem;
     align-items: center;
+    
 }
 
 .view-toggle-chip {
     padding: 0.35rem 0.9rem;
-    background: #4a9eff;
-    border: 1px solid #4a9eff;
+    background: var(--linear-gradient);
+    border: 1px solid hsl(0, 0%, 20%);
     border-radius: 999px;
-    color: #041024;
+    color: white;
     font-size: 0.9rem;
     cursor: pointer;
     font-weight: 600;
-    box-shadow: 0 0 12px rgba(74, 158, 255, 0.3);
-    transition: opacity 0.2s ease;
+    box-shadow: none;
+    transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
 }
 
 .view-toggle-chip:hover {
-    opacity: 0.85;
+    background: rgba(74, 158, 255, 0.15);
 }
 
-.folder-btn {
+.view-toggle-chip.is-active {
+    border-color: hsla(150, 100%, 38%, 0.5);
+    background: linear-gradient(hsla(150, 100%, 50%, 0.25) 10%, hsla(150, 100%, 50%, 0.15) 45%, hsla(150, 100%, 20%, .1) 55%, hsla(150, 100%, 21%, .3) 90%);
+}
+
+.timer-toggle-btn {
     padding: 0.35rem 0.9rem;
-    background: #131313;
+    background: rgba(6, 8, 15, 0.55);
     border: 1px solid #2d2d2d;
     border-radius: 999px;
     color: #d5d5d5;
@@ -506,21 +916,70 @@ dock {
     transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
 
-.folder-btn:hover {
-    border-color: #4a9eff;
+.timer-toggle-btn.active {
+    background: rgba(122, 176, 68, 0.12);
+    color: #7ab044;
+    border-color: #7ab044;
+    box-shadow: 0 0 8px rgba(122, 176, 68, 0.25);
+}
+
+.timer-toggle-btn:hover {
+    border-color: #7ab044;
     color: white;
 }
 
+.folder-btn {
+    padding: 0.35rem 0.9rem;
+    background: rgba(6, 8, 15, 0.55);
+    border: 1px solid #2d2d2d;
+    border-radius: 999px;
+    color: #d5d5d5;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+    backdrop-filter: blur(2.5px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.folder-btn:hover {
+    border-color: hsl(212, 100%, 65%);
+    color: #ffffff;
+    background: rgba(74, 158, 255, 0.15);
+}
+
 .folder-btn.active {
+    background: linear-gradient(hsla(212, 100%, 50%, 0.25) 10%, hsla(212, 100%, 50%, 0.15) 45%, hsla(212, 100%, 20%, .1) 55%, hsla(212, 100%, 21%, .3) 90%);
+    color: hsl(212, 100%, 65%);
+    border-color: hsl(212, 100%, 65%);
+    font-weight: 600;
+    box-shadow: 0 0 8px rgba(74, 158, 255, 0.25);
+}
+
+.feed-load-more {
+    padding: 0.6rem 1.5rem;
+    background: #131313;
+    border: 1px solid #4a9eff;
+    border-radius: 999px;
+    color: #4a9eff;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.feed-load-more:hover:not(:disabled) {
     background: #4a9eff;
     color: #041024;
-    border-color: #4a9eff;
-    font-weight: 600;
     box-shadow: 0 0 12px rgba(74, 158, 255, 0.3);
 }
 
+.feed-load-more:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 .feed-item {
-    background: linear-gradient(145deg, rgba(18, 18, 18, 0.95), rgba(8, 8, 8, 0.95));
+    background: var(--linear-gradient);
     border: 1px solid rgba(74, 158, 255, 0.35);
     border-radius: 16px;
     padding: 1rem;
@@ -683,28 +1142,14 @@ dock::-webkit-scrollbar,
     display: none;
 }
 
-/* Smooth scrolling */
+/* Hide all scrollbars */
 * {
-    scrollbar-width: thin;
-    scrollbar-color: #444 #1a1a1a;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
 }
 
 *::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-}
-
-*::-webkit-scrollbar-track {
-    background: #1a1a1a;
-}
-
-*::-webkit-scrollbar-thumb {
-    background: #444;
-    border-radius: 4px;
-}
-
-*::-webkit-scrollbar-thumb:hover {
-    background: #555;
+    display: none;
 }
 
 /* Input focus states */
@@ -807,15 +1252,17 @@ search-container {
     justify-content: center;
     text-decoration: none;
     color: white;
-    transition: transform 0.2s ease, opacity 0.2s ease;
+    transition: transform 0.2s ease, background 0.15s ease;
     flex-shrink: 0;
     width: 80px;
     min-height: 0;
+    padding: 0.5rem;
+    border-radius: 8px;
 }
 
 .app-icon-item:hover {
-    transform: translateY(-4px);
-    opacity: 0.9;
+    transform: scale(1.05);
+    background: rgba(74, 158, 255, 0.1);
 }
 
 .app-icon-image {
@@ -861,6 +1308,112 @@ search-container {
         -webkit-line-clamp: 1;
         line-clamp: 1;
     }
+}
+
+/* Wikipedia Content Styling */
+text table {
+    border: 1px solid #888 !important;
+    border-collapse: collapse !important;
+    background: transparent !important;
+    margin: 1rem 0;
+}
+
+text td,
+text th {
+    border: 1px solid #666 !important;
+    padding: 0.5rem !important;
+    background: transparent !important;
+}
+
+text th {
+    font-weight: 600;
+    color: #ccc;
+}
+
+text p {
+    margin: 0.75rem 0;
+    line-height: 1.6;
+}
+
+text h2,
+text h3,
+text h4 {
+    margin-top: 1.5rem;
+    margin-bottom: 0.75rem;
+    color: #fff;
+}
+
+text ul,
+text ol {
+    margin: 0.75rem 0;
+    padding-left: 2rem;
+}
+
+text img {
+    max-width: 100%;
+    height: auto;
+}
+
+/* Wikipedia Infobox Styling in Overview */
+overview table {
+    border: 1px solid #888 !important;
+    border-collapse: collapse !important;
+    background: transparent !important;
+}
+
+overview td,
+overview th {
+    border: 1px solid #666 !important;
+    padding: 0.5rem !important;
+    background: transparent !important;
+}
+
+overview th {
+    font-weight: 600;
+    color: #ccc;
+}
+
+overview img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0 auto 1rem;
+    border-radius: 4px;
+    border: 1px solid #888;
+}
+
+/* Keyboard Navigation Highlight */
+.nav-highlight {
+    outline: 2px solid #4a9eff !important;
+    outline-offset: 2px;
+    background: rgba(74, 158, 255, 0.15) !important;
+    border-radius: 4px;
+    position: relative;
+    z-index: 10;
+}
+
+.suggestion-item.nav-highlight {
+    background: rgba(74, 158, 255, 0.2) !important;
+}
+
+.feed-item.nav-highlight {
+    background: rgba(74, 158, 255, 0.1) !important;
+    border-color: #4a9eff !important;
+}
+
+.bookmark-link.nav-highlight {
+    background: rgba(74, 158, 255, 0.2) !important;
+}
+
+.bookmark-link.nav-highlight .bookmark-name {
+    color: #fff !important;
+    font-weight: 600;
+}
+
+dock a.nav-highlight {
+    transform: scale(1.1);
+    background: rgba(74, 158, 255, 0.2) !important;
+    transition: transform 0.15s ease, background 0.15s ease;
 }
 
 /* Development outlines - remove in production */

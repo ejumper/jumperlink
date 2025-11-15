@@ -6,6 +6,12 @@ const CONFIG = {
     // API Keys (REPLACE WITH YOUR OWN)
     OPENROUTER_API_KEY: 'YOUR_OPENROUTER_API_KEY_HERE',
 
+    // Trakt.tv Configuration (REPLACE WITH YOUR OWN)
+    TRAKT_CLIENT_ID: '9b9ca3fb155774ee1d2aa86ea64d1b183c7c749510a6d0fdcd040a5b11a7d406',
+    TRAKT_CLIENT_SECRET: '1664d2c2e05c336d7187c5f92de9ffbe72fa8a9dd80edd65cda7c42971a2003e',
+    TRAKT_ACCESS_TOKEN: 'b3f304e60886997be93c49c9fff9911038bed97ac1050a7f1a7578c461a42a2c',
+    TRAKT_API_VERSION: '2',
+
     // Nextcloud News Configuration
     NEXTCLOUD_URL: 'https://cloud.jumperlink.net',
     NEXTCLOUD_USER: 'admin',
@@ -15,20 +21,27 @@ const CONFIG = {
     // API Endpoints
     WIKI_API: 'https://en.wikipedia.org/w/api.php',
     OPENROUTER_API: 'https://openrouter.ai/api/v1/chat/completions',
+    TRAKT_API: 'https://api.trakt.tv',
 
     // Settings
-    FEED_ITEMS: 100,
-    SUGGESTION_LIMIT: { wikipedia: 5, bookmarks: 5 },
+    INITIAL_FEED_ITEMS: 20, // Initial feed load
+    FEED_ITEMS_PER_PAGE: 10, // Items to load per "load more" click
+    SUGGESTION_LIMIT: { wikipedia: 5, bookmarks: 5, trakt: 5 },
     DEBOUNCE_MS: 300,
     UPDATE_TIME_INTERVAL: 1000, // Update clock every second
     SHOW_POST_CONTENT: true, // Show post content in cards
-    POST_CONTENT_LIMIT: 280 // Character limit for post preview
+    POST_CONTENT_LIMIT: 280, // Character limit for post preview
+    TIMERS_API_BASE: 'https://timers.cloudflare-ceremony099.workers.dev',
+    TIMERS_BOARD_ID: 'main',
+    TIMER_TICK_INTERVAL: 500
 };
 
 const LOCAL_STORAGE_KEYS = {
     readItems: 'jumperlink_read_items',
     readSyncQueue: 'jumperlink_read_sync_queue'
 };
+
+const FALLBACK_FAVICON = 'icons/web.webp';
 
 // ============================================================================
 // STATE MANAGEMENT
@@ -45,11 +58,29 @@ const STATE = {
     folders: [], // Nextcloud News folders
     feeds: [], // Nextcloud News feeds
     selectedFolder: null, // null = all feeds, otherwise folder ID
-    feedViewFilter: 'unviewed', // 'unviewed' or 'viewed'
+    feedViewFilter: 'unviewed', // 'unviewed' or 'all'
     latestItems: [],
     pendingReadMarks: new Set(),
     readSyncQueue: new Set(),
-    localReadItems: new Set()
+    localReadItems: new Set(),
+    timerBoardId: null,
+    timers: [],
+    timerPanelVisible: false,
+    timerTickIntervalId: null,
+    timerBoardLoaded: false,
+    timerBoardInitialized: false,
+    finishingTimers: new Set(),
+    finishedTimers: new Set(),
+    timerAudioMap: new Map(),
+    timerError: false,
+    feedOffset: 0, // Pagination offset for feed items
+    feedHasMore: true, // Whether more items are available to load
+    feedLoading: false, // Loading state for load more button
+
+    // Keyboard navigation state
+    navigationMode: null, // null, 'search', 'bookmarks', 'applinks', 'feed'
+    navigationIndex: -1, // Current index in the navigable items
+    navigationItems: [] // Current list of navigable items
 };
 
 // ============================================================================
@@ -71,7 +102,8 @@ const DOM = {
     bottom: document.querySelector('bottom'),
     taskModal: null,
     taskForm: null,
-    taskMessage: null
+    taskMessage: null,
+    clockToggle: null
 };
 
 // ============================================================================
@@ -90,6 +122,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         loadBookmarks()
     ]);
 
+    await initTimerBoard();
+
     // Initialize home mode
     loadHomeMode();
 
@@ -101,6 +135,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Set up browser history navigation
     setupHistoryNavigation();
+
+    // Set up keyboard navigation
+    setupKeyboardNavigation();
 
     console.log('[Jumperlink] Dashboard ready');
 });
@@ -139,6 +176,249 @@ function setupHistoryNavigation() {
         console.log('[Routing] Browser navigation detected');
         handleURLRouting();
     });
+}
+
+// ============================================================================
+// KEYBOARD NAVIGATION
+// ============================================================================
+
+function setupKeyboardNavigation() {
+    document.addEventListener('keydown', handleGlobalKeydown);
+    console.log('[Navigation] Keyboard shortcuts enabled');
+}
+
+function handleGlobalKeydown(e) {
+    // Ignore if modifier keys are pressed (except Shift for some shortcuts)
+    if (e.ctrlKey || e.metaKey || e.altKey) {
+        return;
+    }
+
+    // Check if user is typing in an input field
+    const isInputFocused = document.activeElement && (
+        document.activeElement.tagName === 'INPUT' ||
+        document.activeElement.tagName === 'TEXTAREA' ||
+        document.activeElement.isContentEditable
+    );
+
+    // Handle Escape key (works even in input fields)
+    if (e.key === 'Escape') {
+        if (STATE.navigationMode) {
+            // Exit navigation mode only
+            e.preventDefault();
+            exitNavigationMode();
+            return;
+        }
+        // Let search input's own handler deal with Escape if not in navigation mode
+        // This maintains existing behavior
+        return;
+    }
+
+    // Handle arrow keys and Enter when in navigation mode
+    if (STATE.navigationMode) {
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            navigateDown();
+            return;
+        }
+        if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            navigateUp();
+            return;
+        }
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            activateCurrentItem();
+            return;
+        }
+    }
+
+    // Special handling for arrow down in search input when not in navigation mode
+    // This allows starting navigation from the search input
+    if (isInputFocused && document.activeElement === DOM.searchInput) {
+        if (e.key === 'ArrowDown' && STATE.currentSuggestions.length > 0 && !STATE.navigationMode) {
+            e.preventDefault();
+            enterSearchNavigationMode();
+            return;
+        }
+    }
+
+    // Don't process shortcuts if typing in input (except when in search input for arrow navigation)
+    if (isInputFocused && document.activeElement !== DOM.searchInput) {
+        return;
+    }
+
+    // Handle keyboard shortcuts
+    switch (e.key.toLowerCase()) {
+        case 's':
+            if (!isInputFocused) {
+                e.preventDefault();
+                enterSearchMode();
+            }
+            break;
+        case 'b':
+            if (!isInputFocused) {
+                e.preventDefault();
+                enterBookmarkNavigationMode();
+            }
+            break;
+        case 'a':
+            if (!isInputFocused) {
+                e.preventDefault();
+                enterApplinkNavigationMode();
+            }
+            break;
+        case 'r':
+            if (!isInputFocused) {
+                e.preventDefault();
+                enterFeedNavigationMode();
+            }
+            break;
+    }
+}
+
+function enterBookmarkNavigationMode() {
+    const bookmarkLinks = document.querySelectorAll('.bookmark-link');
+    if (bookmarkLinks.length === 0) {
+        console.log('[Navigation] No bookmarks to navigate');
+        return;
+    }
+
+    STATE.navigationMode = 'bookmarks';
+    STATE.navigationItems = Array.from(bookmarkLinks);
+    STATE.navigationIndex = 0;
+    updateNavigationHighlight();
+    console.log('[Navigation] Bookmark navigation mode activated');
+}
+
+function enterApplinkNavigationMode() {
+    const appLinks = document.querySelectorAll('dock a');
+    if (appLinks.length === 0) {
+        console.log('[Navigation] No app links to navigate');
+        return;
+    }
+
+    STATE.navigationMode = 'applinks';
+    STATE.navigationItems = Array.from(appLinks);
+    STATE.navigationIndex = 0;
+    updateNavigationHighlight();
+    console.log('[Navigation] Applink navigation mode activated');
+}
+
+function enterFeedNavigationMode() {
+    const feedItems = document.querySelectorAll('.feed-item');
+    if (feedItems.length === 0) {
+        console.log('[Navigation] No feed items to navigate');
+        return;
+    }
+
+    STATE.navigationMode = 'feed';
+    STATE.navigationItems = Array.from(feedItems);
+    STATE.navigationIndex = 0;
+    updateNavigationHighlight();
+    console.log('[Navigation] Feed navigation mode activated');
+}
+
+function enterSearchNavigationMode() {
+    const suggestionItems = document.querySelectorAll('.suggestion-item');
+    if (suggestionItems.length === 0) {
+        return;
+    }
+
+    STATE.navigationMode = 'search';
+    STATE.navigationItems = Array.from(suggestionItems);
+    STATE.navigationIndex = 0;
+    updateNavigationHighlight();
+}
+
+function exitNavigationMode() {
+    if (STATE.navigationMode) {
+        console.log('[Navigation] Exiting navigation mode:', STATE.navigationMode);
+        clearNavigationHighlight();
+        STATE.navigationMode = null;
+        STATE.navigationIndex = -1;
+        STATE.navigationItems = [];
+    }
+}
+
+function navigateDown() {
+    if (!STATE.navigationMode || STATE.navigationItems.length === 0) {
+        return;
+    }
+
+    STATE.navigationIndex = (STATE.navigationIndex + 1) % STATE.navigationItems.length;
+    updateNavigationHighlight();
+    scrollToNavigationItem();
+}
+
+function navigateUp() {
+    if (!STATE.navigationMode || STATE.navigationItems.length === 0) {
+        return;
+    }
+
+    STATE.navigationIndex = (STATE.navigationIndex - 1 + STATE.navigationItems.length) % STATE.navigationItems.length;
+    updateNavigationHighlight();
+    scrollToNavigationItem();
+}
+
+function updateNavigationHighlight() {
+    clearNavigationHighlight();
+
+    if (STATE.navigationIndex >= 0 && STATE.navigationIndex < STATE.navigationItems.length) {
+        const item = STATE.navigationItems[STATE.navigationIndex];
+        item.classList.add('nav-highlight');
+    }
+}
+
+function clearNavigationHighlight() {
+    document.querySelectorAll('.nav-highlight').forEach(el => {
+        el.classList.remove('nav-highlight');
+    });
+}
+
+function scrollToNavigationItem() {
+    if (STATE.navigationIndex >= 0 && STATE.navigationIndex < STATE.navigationItems.length) {
+        const item = STATE.navigationItems[STATE.navigationIndex];
+        item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+}
+
+function activateCurrentItem() {
+    if (STATE.navigationIndex < 0 || STATE.navigationIndex >= STATE.navigationItems.length) {
+        return;
+    }
+
+    const item = STATE.navigationItems[STATE.navigationIndex];
+
+    switch (STATE.navigationMode) {
+        case 'search':
+            // Find the suggestion data index
+            const index = parseInt(item.getAttribute('data-index'), 10);
+            if (!isNaN(index) && STATE.currentSuggestions[index]) {
+                selectSuggestion(STATE.currentSuggestions[index]);
+            }
+            break;
+
+        case 'bookmarks':
+            // Click the bookmark link
+            item.click();
+            exitNavigationMode();
+            break;
+
+        case 'applinks':
+            // Click the app link
+            item.click();
+            exitNavigationMode();
+            break;
+
+        case 'feed':
+            // Find and click the feed item link
+            const feedLink = item.querySelector('.feed-item-title a, a');
+            if (feedLink) {
+                feedLink.click();
+            }
+            exitNavigationMode();
+            break;
+    }
 }
 
 function updateURL(params, replaceState = false) {
@@ -209,12 +489,516 @@ function updateClock() {
         day: 'numeric'
     });
 
-    if (DOM.pageTitleText) {
+    ensureClockToggle();
+    if (DOM.clockToggle) {
+        DOM.clockToggle.textContent = timeString;
+    } else if (DOM.pageTitleText) {
         DOM.pageTitleText.textContent = timeString;
-    } else if (DOM.pageTitle) {
-        DOM.pageTitle.innerHTML = `<p>${timeString}</p>`;
     }
-    DOM.subtitle.innerHTML = `<p>${dateString}</p>`;
+
+    if (DOM.subtitle) {
+        DOM.subtitle.innerHTML = `<p>${dateString}</p>`;
+    }
+}
+
+function ensureClockToggle() {
+    if (DOM.clockToggle) return;
+
+    const target = DOM.pageTitleText || DOM.pageTitle;
+    if (!target) return;
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'clock-toggle';
+    button.addEventListener('click', handleClockToggle);
+
+    if (DOM.pageTitleText) {
+        DOM.pageTitleText.innerHTML = '';
+        DOM.pageTitleText.appendChild(button);
+    } else if (DOM.pageTitle) {
+        DOM.pageTitle.innerHTML = '';
+        DOM.pageTitle.appendChild(button);
+    }
+
+    DOM.clockToggle = button;
+    syncTimerPanelState();
+}
+
+function handleClockToggle() {
+    toggleTimerPanel();
+}
+
+// ============================================================================
+// TIMER BOARD
+// ============================================================================
+
+async function initTimerBoard() {
+    STATE.timerBoardId = CONFIG.TIMER_BOARD_ID || 'main';
+    await fetchTimerBoard(true);
+    startTimerTicker();
+}
+
+function getTimersApiBase() {
+    const base = CONFIG.TIMERS_API_BASE || '';
+    return base.endsWith('/') ? base.slice(0, -1) : base;
+}
+
+async function fetchTimerBoard(initial = false) {
+    if (!STATE.timerBoardId) return;
+    try {
+        const response = await fetch(`${getTimersApiBase()}/api/boards/${encodeURIComponent(STATE.timerBoardId)}/timers`);
+        if (!response.ok) throw new Error('Failed to fetch timers');
+        const data = await response.json();
+        handleTimerBoardResponse(data, initial);
+        STATE.timerError = false;
+    } catch (error) {
+        console.error('Timer fetch error:', error);
+        STATE.timerError = true;
+        renderTimerLists();
+    }
+}
+
+async function sendTimerMutation(action, payload) {
+    if (!STATE.timerBoardId) return;
+    try {
+        const response = await fetch(`${getTimersApiBase()}/api/boards/${encodeURIComponent(STATE.timerBoardId)}/timers`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ action, payload })
+        });
+        if (!response.ok) throw new Error('Timer mutation failed');
+        const data = await response.json();
+        handleTimerBoardResponse(data);
+        STATE.timerError = false;
+        return data;
+    } catch (error) {
+        console.error('Timer mutation error:', error);
+        STATE.timerError = true;
+        renderTimerLists();
+        throw error;
+    }
+}
+
+function handleTimerBoardResponse(board, initial = false) {
+    if (!board || !Array.isArray(board.timers)) {
+        STATE.timers = [];
+        renderTimerLists();
+        return;
+    }
+
+    const previousTimers = STATE.timers || [];
+    const previousMap = new Map(previousTimers.map(timer => [timer.id, timer]));
+
+    STATE.timers = board.timers;
+    STATE.timerBoardLoaded = true;
+
+    if (initial && !STATE.timerBoardInitialized) {
+        STATE.finishedTimers = new Set(board.timers.filter(timer => timer.state === 'finished').map(timer => timer.id));
+        STATE.timerBoardInitialized = true;
+    } else {
+        board.timers.forEach(timer => {
+            const prevState = previousMap.get(timer.id)?.state;
+            if (timer.state === 'finished') {
+                if (!STATE.finishedTimers.has(timer.id) && !STATE.finishingTimers.has(timer.id) && prevState !== 'finished') {
+                    triggerTimerCompletion(timer);
+                }
+            } else {
+                STATE.finishedTimers.delete(timer.id);
+                STATE.finishingTimers.delete(timer.id);
+                stopTimerAudio(timer.id);
+            }
+        });
+
+        previousTimers.forEach(timer => {
+            if (!STATE.timers.find(current => current.id === timer.id)) {
+                STATE.finishedTimers.delete(timer.id);
+                STATE.finishingTimers.delete(timer.id);
+                stopTimerAudio(timer.id);
+            }
+        });
+    }
+
+    renderTimerLists();
+}
+
+function triggerTimerCompletion(timer) {
+    STATE.finishingTimers.add(timer.id);
+    renderTimerLists();
+
+    const audio = new Audio('sounds/ringtone.m4a');
+    STATE.timerAudioMap.set(timer.id, audio);
+
+    const endHandler = () => {
+        STATE.finishingTimers.delete(timer.id);
+        STATE.finishedTimers.add(timer.id);
+        STATE.timerAudioMap.delete(timer.id);
+        renderTimerLists();
+    };
+
+    audio.addEventListener('ended', endHandler, { once: true });
+    audio.addEventListener('error', endHandler, { once: true });
+
+    const playPromise = audio.play();
+    if (playPromise && typeof playPromise.catch === 'function') {
+        playPromise.catch(() => endHandler());
+    }
+}
+
+function stopTimerAudio(timerId) {
+    const audio = STATE.timerAudioMap.get(timerId);
+    if (audio) {
+        try {
+            audio.pause();
+            audio.currentTime = 0;
+        } catch (err) {
+            console.warn('Unable to stop timer audio:', err);
+        }
+        STATE.timerAudioMap.delete(timerId);
+    }
+}
+
+function startTimerTicker() {
+    if (STATE.timerTickIntervalId) {
+        clearInterval(STATE.timerTickIntervalId);
+    }
+    STATE.timerTickIntervalId = setInterval(updateTimerCountdowns, CONFIG.TIMER_TICK_INTERVAL);
+}
+
+function updateTimerCountdowns() {
+    if (!STATE.timerBoardLoaded) return;
+    const now = Date.now();
+    STATE.timers.forEach(timer => {
+        const row = document.querySelector(`.timer-row[data-timer-id="${timer.id}"]`);
+        if (!row) return;
+
+        const remainingEl = row.querySelector('.timer-remaining');
+        const progressEl = row.querySelector('.timer-progress-fill');
+        const remaining = remainingMs(timer, now);
+
+        if (remainingEl) {
+            remainingEl.textContent = formatRemaining(remaining);
+        }
+        if (progressEl) {
+            const percent = timer.durationMs > 0
+                ? Math.min(100, ((timer.durationMs - remaining) / timer.durationMs) * 100)
+                : 100;
+            progressEl.style.width = `${percent}%`;
+        }
+    });
+}
+
+function renderTimerLists() {
+    const panel = document.querySelector('.timer-panel');
+    if (!panel) return;
+
+    const activeContainer = panel.querySelector('.timer-items');
+    const finishedContainer = panel.querySelector('.finished-timer-items');
+    if (!activeContainer || !finishedContainer) return;
+
+    const now = Date.now();
+    const finishingIds = STATE.finishingTimers;
+
+    const activeTimers = STATE.timers
+        .filter(timer => timer.state !== 'finished' || finishingIds.has(timer.id))
+        .sort((a, b) => remainingMs(a, now) - remainingMs(b, now));
+
+    const finishedTimers = STATE.timers
+        .filter(timer => timer.state === 'finished' && !finishingIds.has(timer.id))
+        .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+
+    const errorMessage = STATE.timerError
+        ? '<div class="timer-empty timer-error">Unable to reach timer service</div>'
+        : null;
+    const loadingMessage = !STATE.timerBoardLoaded && !STATE.timerError
+        ? '<div class="timer-empty">Loading timers…</div>'
+        : null;
+
+    activeContainer.innerHTML = errorMessage
+        || (activeTimers.length
+            ? activeTimers.map(timer => renderTimerRow(timer, now, finishingIds.has(timer.id))).join('')
+            : (loadingMessage || '<div class="timer-empty">No active timers</div>'));
+
+    finishedContainer.innerHTML = errorMessage
+        || (finishedTimers.length
+            ? finishedTimers.map(timer => renderFinishedTimerRow(timer)).join('')
+            : (loadingMessage || '<div class="timer-empty">No finished timers</div>'));
+
+    updateTimerCountdowns();
+    syncTimerPanelState();
+}
+
+function renderTimerRow(timer, now, isFinishing) {
+    const remaining = remainingMs(timer, now);
+    const progressPercent = timer.durationMs > 0
+        ? Math.min(100, ((timer.durationMs - remaining) / timer.durationMs) * 100)
+        : 0;
+    const isRunning = timer.state === 'running';
+    const rowClasses = [
+        'timer-row',
+        isRunning ? 'timer-row--running' : '',
+        isFinishing ? 'timer-row--finishing' : ''
+    ].join(' ');
+
+    return `
+        <div class="${rowClasses}" data-timer-id="${timer.id}">
+            <div class="timer-progress-fill" style="width:${progressPercent}%"></div>
+            <div class="timer-row-main">
+                <div class="timer-name">${escapeHtml(timer.label || 'Timer')}</div>
+                <div class="timer-remaining">${formatRemaining(remaining)}</div>
+            </div>
+            <div class="timer-row-actions">
+                <button type="button"
+                    class="timer-action-btn"
+                    data-timer-action="${isRunning ? 'pause' : 'start'}"
+                    data-timer-id="${timer.id}">
+                    ${isRunning ? 'Pause' : 'Start'}
+                </button>
+                <button type="button"
+                    class="timer-action-btn"
+                    data-timer-action="reset"
+                    data-timer-id="${timer.id}">
+                    Stop
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+function renderFinishedTimerRow(timer) {
+    return `
+        <div class="timer-row timer-row--finished" data-timer-id="${timer.id}">
+            <div class="timer-progress-fill" style="width:100%;"></div>
+            <div class="timer-row-main">
+                <div class="timer-name">${escapeHtml(timer.label || 'Timer')}</div>
+                <div class="timer-remaining">Finished</div>
+            </div>
+            <div class="timer-row-actions">
+                <button type="button"
+                    class="timer-action-btn"
+                    data-timer-action="start"
+                    data-timer-id="${timer.id}">
+                    Restart
+                </button>
+                <button type="button"
+                    class="timer-action-btn"
+                    data-timer-action="delete"
+                    data-timer-id="${timer.id}">
+                    Delete
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+function effectiveElapsedMs(timer, now) {
+    if (timer.state === 'running' && timer.startedAt) {
+        const started = Date.parse(timer.startedAt);
+        return timer.elapsedMs + (now - started);
+    }
+    return timer.elapsedMs;
+}
+
+function remainingMs(timer, now) {
+    const elapsed = effectiveElapsedMs(timer, now);
+    return Math.max(0, timer.durationMs - elapsed);
+}
+
+function formatRemaining(ms) {
+    if (!Number.isFinite(ms)) return '--';
+    const totalSeconds = Math.floor(ms / 1000);
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    const parts = [];
+    if (days > 0) parts.push(`${days}d`);
+    if (hours > 0 || days > 0) parts.push(`${hours}h`);
+    if (minutes > 0 || hours > 0 || days > 0) parts.push(`${minutes}m`);
+    parts.push(`${seconds}s`);
+    return parts.join(' ');
+}
+
+function toggleTimerPanel() {
+    STATE.timerPanelVisible = !STATE.timerPanelVisible;
+    syncTimerPanelState();
+}
+
+function syncTimerPanelState() {
+    const panel = document.querySelector('.timer-panel');
+    if (panel) {
+        panel.classList.toggle('open', STATE.timerPanelVisible);
+    }
+    const toggleBtn = document.querySelector('.timer-toggle-btn');
+    if (toggleBtn) {
+        toggleBtn.classList.toggle('active', STATE.timerPanelVisible);
+    }
+    if (DOM.clockToggle) {
+        DOM.clockToggle.classList.toggle('active', STATE.timerPanelVisible);
+    }
+}
+
+async function handleTimerFormSubmit(event) {
+    event.preventDefault();
+    const form = event.target.closest('.timer-add-form');
+    if (!form) return;
+
+    const labelInput = form.querySelector('.timer-label-input');
+    const countdownInputs = form.querySelectorAll('.timer-count-field');
+    const dateInput = form.querySelector('.timer-date-input');
+
+    const label = (labelInput?.value || '').trim() || 'Timer';
+    const countdownMs = calculateCountdownMs(countdownInputs);
+    const dateDurationMs = calculateDateTargetMs(dateInput);
+
+    let durationMs = 0;
+    if (countdownMs > 0 && !dateInput?.value) {
+        durationMs = countdownMs;
+    } else if (dateDurationMs > 0 && countdownMs === 0) {
+        durationMs = dateDurationMs;
+    }
+
+    if (durationMs <= 0) {
+        alert('Please provide a countdown duration or a future date/time.');
+        return;
+    }
+
+    const previousIds = new Set(STATE.timers.map(timer => timer.id));
+    try {
+        const board = await sendTimerMutation('create', { label, durationMs });
+        const newTimer = board?.timers?.find(timer => !previousIds.has(timer.id));
+        if (newTimer) {
+            await sendTimerMutation('command', { id: newTimer.id, command: 'start' });
+        }
+    } catch (error) {
+        console.error('Timer create error:', error);
+        alert('Unable to create timer. Please try again when the timer service is reachable.');
+    }
+
+    labelInput.value = '';
+    countdownInputs.forEach(select => {
+        select.value = '';
+        select.disabled = false;
+    });
+    if (dateInput) {
+        dateInput.value = '';
+        dateInput.disabled = false;
+    }
+}
+
+function calculateCountdownMs(inputs) {
+    if (!inputs || inputs.length === 0) return 0;
+    let total = 0;
+    inputs.forEach(input => {
+        const value = Number(input.value);
+        if (!Number.isFinite(value) || value <= 0) {
+            return;
+        }
+        switch (input.dataset.unit) {
+            case 'days':
+                total += value * 86400000;
+                break;
+            case 'hours':
+                total += value * 3600000;
+                break;
+            case 'minutes':
+                total += value * 60000;
+                break;
+            case 'seconds':
+                total += value * 1000;
+                break;
+            default:
+                break;
+        }
+    });
+    return total;
+}
+
+function calculateDateTargetMs(dateInput) {
+    if (!dateInput || !dateInput.value) return 0;
+    const selected = Date.parse(dateInput.value);
+    const now = Date.now();
+    if (!Number.isFinite(selected) || selected <= now) {
+        return 0;
+    }
+    return selected - now;
+}
+
+function handleCountdownInputChange(form) {
+    if (!form) return;
+    const countdownInputs = form.querySelectorAll('.timer-count-field');
+    const dateInput = form.querySelector('.timer-date-input');
+    if (!dateInput) return;
+
+    const hasCountdown = Array.from(countdownInputs).some(input => Number(input.value) > 0);
+    dateInput.disabled = hasCountdown;
+    if (hasCountdown) {
+        dateInput.value = '';
+    }
+}
+
+function handleDateInputChange(form) {
+    if (!form) return;
+    const countdownInputs = form.querySelectorAll('.timer-count-field');
+    const dateInput = form.querySelector('.timer-date-input');
+    if (!dateInput) return;
+
+    const hasDate = Boolean(dateInput.value);
+    countdownInputs.forEach(input => {
+        input.disabled = hasDate;
+        if (hasDate) {
+            input.value = '';
+        }
+    });
+}
+
+async function handleTimerPanelAction(event) {
+    const actionButton = event.target.closest('[data-timer-action]');
+    if (!actionButton) return;
+
+    const { timerAction, timerId } = actionButton.dataset;
+    if (!timerId) return;
+    const timer = STATE.timers.find(entry => entry.id === timerId);
+
+    if (timerAction === 'delete') {
+        try {
+            await sendTimerMutation('delete', { id: timerId });
+        } catch (error) {
+            console.error('Timer delete error:', error);
+        }
+        return;
+    }
+
+    if (timerAction === 'reset') {
+        try {
+            await sendTimerMutation('command', { id: timerId, command: 'reset' });
+        } catch (error) {
+            console.error('Timer reset error:', error);
+        }
+        return;
+    }
+
+    if (timerAction === 'start' || timerAction === 'pause') {
+        if (timerAction === 'start' && timer && timer.state === 'finished') {
+            try {
+                await sendTimerMutation('command', { id: timerId, command: 'reset' });
+                await sendTimerMutation('command', { id: timerId, command: 'start' });
+            } catch (error) {
+                console.error('Timer restart error:', error);
+            }
+            return;
+        }
+        try {
+            await sendTimerMutation('command', {
+                id: timerId,
+                command: timerAction === 'start' ? 'start' : 'pause'
+            });
+        } catch (error) {
+            console.error('Timer command error:', error);
+        }
+    }
 }
 
 async function loadNextcloudFolders() {
@@ -273,24 +1057,31 @@ async function loadNextcloudFeeds() {
     }
 }
 
-async function loadNextcloudFeed(folderId = null) {
+async function loadNextcloudFeed(folderId = null, appendMode = false) {
     if (!CONFIG.NEXTCLOUD_URL || CONFIG.NEXTCLOUD_USER === 'YOUR_USERNAME') {
         STATE.latestItems = [];
         const placeholder = '<p style="padding:1rem;"><em>Configure Nextcloud credentials to see your news feed</em></p>';
         DOM.overview.innerHTML = getFeedControlsHTML() + placeholder;
         attachViewToggleHandlers();
         attachFolderClickHandlers();
+        attachTimerControlHandlers();
+        renderTimerLists();
+        syncTimerPanelState();
         return;
     }
 
     try {
         const auth = btoa(`${CONFIG.NEXTCLOUD_USER}:${CONFIG.NEXTCLOUD_PASS}`);
 
-        const includeRead = STATE.feedViewFilter === 'viewed';
+        // Determine batch size based on whether this is initial load or load more
+        const batchSize = appendMode ? CONFIG.FEED_ITEMS_PER_PAGE : CONFIG.INITIAL_FEED_ITEMS;
+
+        const includeRead = STATE.feedViewFilter === 'all';
         const params = new URLSearchParams({
             type: folderId === null ? '3' : '1',
             getRead: includeRead ? 'true' : 'false',
-            batchSize: CONFIG.FEED_ITEMS.toString()
+            batchSize: batchSize.toString(),
+            offset: STATE.feedOffset.toString()
         });
 
         if (folderId !== null) {
@@ -309,7 +1100,21 @@ async function loadNextcloudFeed(folderId = null) {
         if (!response.ok) throw new Error('Failed to fetch feed');
 
         const data = await response.json();
-        STATE.latestItems = data.items || [];
+        const newItems = data.items || [];
+
+        // Check if there are more items to load
+        STATE.feedHasMore = newItems.length >= batchSize;
+
+        // Update offset for next load
+        STATE.feedOffset += newItems.length;
+
+        // Either append or replace items based on mode
+        if (appendMode) {
+            STATE.latestItems = [...STATE.latestItems, ...newItems];
+        } else {
+            STATE.latestItems = newItems;
+        }
+
         applyLocalReadOverrides(STATE.latestItems);
         displayFeed();
         processReadSyncQueue();
@@ -319,28 +1124,96 @@ async function loadNextcloudFeed(folderId = null) {
         DOM.overview.innerHTML = getFeedControlsHTML() + message;
         attachViewToggleHandlers();
         attachFolderClickHandlers();
+        attachTimerControlHandlers();
+        renderTimerLists();
+        syncTimerPanelState();
     }
 }
 
 function displayViewToggle() {
-    const nextView = STATE.feedViewFilter === 'unviewed' ? 'viewed' : 'unviewed';
-    const label = STATE.feedViewFilter === 'unviewed' ? '🟢 Viewed' : '⚫ Viewed';
+    const nextView = STATE.feedViewFilter === 'unviewed' ? 'all' : 'unviewed';
+    const label = STATE.feedViewFilter === 'unviewed' ? '🟢 New' : '⚫ New';
+    const activeClass = STATE.feedViewFilter === 'unviewed' ? ' is-active' : '';
 
     return `
-        <button class="view-toggle-chip" data-view="${nextView}">
+        <button class="view-toggle-chip${activeClass}" data-view="${nextView}">
             ${label}
         </button>
     `;
 }
 
+function displayTimerToggleButton() {
+    return `
+        <button class="timer-toggle-btn${STATE.timerPanelVisible ? ' active' : ''}" type="button">
+            ⏱ Timers
+        </button>
+    `;
+}
+
+function displayTimerPanel() {
+    return `
+        <div class="timer-panel ${STATE.timerPanelVisible ? 'open' : ''}">
+            <form class="timer-add-form">
+                <input type="text" class="timer-label-input" placeholder="Timer name">
+                <div class="timer-countdown-inputs">
+                    <select class="timer-count-field" data-unit="days">
+                        <option value="">Days</option>
+                        ${buildTimerOptions(30)}
+                    </select>
+                    <select class="timer-count-field" data-unit="hours">
+                        <option value="">Hours</option>
+                        ${buildTimerOptions(23)}
+                    </select>
+                    <select class="timer-count-field" data-unit="minutes">
+                        <option value="">Minutes</option>
+                        ${buildTimerOptions(59)}
+                    </select>
+                    <select class="timer-count-field" data-unit="seconds">
+                        <option value="">Seconds</option>
+                        ${buildTimerOptions(59)}
+                    </select>
+                </div>
+                <div class="timer-date-picker">
+                    <input type="datetime-local" class="timer-date-input">
+                </div>
+                <button type="submit" class="timer-add-btn">Add Timer</button>
+            </form>
+            <div class="timer-lists">
+                <div class="timer-list">
+                    <div class="timer-list-header">Active Timers</div>
+                    <div class="timer-items"></div>
+                </div>
+                <div class="timer-list">
+                    <div class="timer-list-header">Finished Timers</div>
+                    <div class="finished-timer-items"></div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function buildTimerOptions(max) {
+    const options = [];
+    for (let i = 0; i <= max; i += 1) {
+        options.push(`<option value="${i}">${i}</option>`);
+    }
+    return options.join('');
+}
+
 function displayFolderMenu() {
     if (STATE.folders.length === 0) {
-        return displayViewToggle();
+        return `
+            <div class="feed-folder-menu">
+                ${displayTimerToggleButton()}
+                ${displayViewToggle()}
+            </div>
+        `;
     }
 
     const isAllActive = STATE.selectedFolder === null;
     const menuHTML = `
         <div class="feed-folder-menu">
+            ${displayTimerToggleButton()}
             ${displayViewToggle()}
             <button class="folder-btn ${isAllActive ? 'active' : ''}" data-folder-id="null">
                 All
@@ -364,12 +1237,15 @@ function displayFeed() {
     const items = getFilteredFeedItems();
 
     if (!items || items.length === 0) {
-        const message = STATE.feedViewFilter === 'viewed'
-            ? '<p style="padding:1rem;"><em>No viewed items</em></p>'
+        const message = STATE.feedViewFilter === 'all'
+            ? '<p style="padding:1rem;"><em>No items to display</em></p>'
             : '<p style="padding:1rem;"><em>No unread items</em></p>';
         DOM.overview.innerHTML = controlsHTML + message;
         attachViewToggleHandlers();
         attachFolderClickHandlers();
+        attachTimerControlHandlers();
+        renderTimerLists();
+        syncTimerPanelState();
         return;
     }
 
@@ -379,15 +1255,52 @@ function displayFeed() {
         </div>
     `;
 
-    DOM.overview.innerHTML = controlsHTML + feedHTML;
+    // Load More button (only show if there are more items to load)
+    const loadMoreHTML = STATE.feedHasMore ? `
+        <div style="padding: 1rem; text-align: center;">
+            <button class="feed-load-more" ${STATE.feedLoading ? 'disabled' : ''}>
+                ${STATE.feedLoading ? 'Loading...' : `Load More (${CONFIG.FEED_ITEMS_PER_PAGE})`}
+            </button>
+        </div>
+    ` : '';
+
+    DOM.overview.innerHTML = controlsHTML + feedHTML + loadMoreHTML;
+    renderTimerLists();
     attachViewToggleHandlers();
     attachFolderClickHandlers();
     attachFeedItemInteractions();
+    attachTimerControlHandlers();
+    attachLoadMoreHandler();
+    syncTimerPanelState();
+}
+
+async function loadMoreFeedItems() {
+    if (STATE.feedLoading || !STATE.feedHasMore) return;
+
+    STATE.feedLoading = true;
+    displayFeed(); // Re-render to show loading state
+
+    try {
+        await loadNextcloudFeed(STATE.selectedFolder, true); // true = append mode
+    } catch (error) {
+        console.error('Error loading more feed items:', error);
+    } finally {
+        STATE.feedLoading = false;
+        displayFeed(); // Re-render with new items or error state
+    }
+}
+
+function attachLoadMoreHandler() {
+    const loadMoreBtn = document.querySelector('.feed-load-more');
+    if (loadMoreBtn) {
+        loadMoreBtn.addEventListener('click', loadMoreFeedItems);
+    }
 }
 
 function getFeedControlsHTML() {
     return `
         <div class="feed-controls">
+            ${displayTimerPanel()}
             ${displayFolderMenu()}
         </div>
     `;
@@ -395,8 +1308,8 @@ function getFeedControlsHTML() {
 
 function getFilteredFeedItems() {
     const items = STATE.latestItems || [];
-    if (STATE.feedViewFilter === 'viewed') {
-        return items.filter(item => item && !isItemUnread(item));
+    if (STATE.feedViewFilter === 'all') {
+        return items.filter(Boolean);
     }
     return items.filter(item => item && isItemUnread(item));
 }
@@ -486,7 +1399,7 @@ function extractFeedMedia(item) {
     if (!item) return null;
 
     if (item.enclosureLink && item.enclosureMime && item.enclosureMime.startsWith('image/')) {
-        return `<img src="${escapeHtml(item.enclosureLink)}" alt="Post media" loading="lazy">`;
+        return `<img src="${escapeHtml(item.enclosureLink)}" alt="" loading="lazy">`;
     }
 
     if (!item.body) return null;
@@ -498,7 +1411,7 @@ function extractFeedMedia(item) {
     if (image) {
         const src = image.getAttribute('src');
         if (src) {
-            return `<img src="${escapeHtml(src)}" alt="${escapeHtml(image.getAttribute('alt') || 'Post media')}" loading="lazy">`;
+            return `<img src="${escapeHtml(src)}" alt="${escapeHtml(image.getAttribute('alt') || '')}" loading="lazy">`;
         }
     }
 
@@ -634,9 +1547,42 @@ function attachViewToggleHandlers() {
             const view = btn.dataset.view;
             if (!view || view === STATE.feedViewFilter) return;
             STATE.feedViewFilter = view;
+            // Reset pagination when filter changes
+            STATE.feedOffset = 0;
+            STATE.feedHasMore = true;
             loadNextcloudFeed(STATE.selectedFolder);
         });
     });
+}
+
+function attachTimerControlHandlers() {
+    const toggleBtn = document.querySelector('.timer-toggle-btn');
+    if (toggleBtn && !toggleBtn.dataset.bound) {
+        toggleBtn.dataset.bound = 'true';
+        toggleBtn.addEventListener('click', toggleTimerPanel);
+    }
+
+    const timerPanel = document.querySelector('.timer-panel');
+    if (timerPanel && !timerPanel.dataset.bound) {
+        timerPanel.dataset.bound = 'true';
+        timerPanel.addEventListener('click', handleTimerPanelAction);
+    }
+
+    const form = document.querySelector('.timer-add-form');
+    if (form && !form.dataset.bound) {
+        form.dataset.bound = 'true';
+        form.addEventListener('submit', handleTimerFormSubmit);
+
+        const countdownInputs = form.querySelectorAll('.timer-count-field');
+        countdownInputs.forEach(select => {
+            select.addEventListener('change', () => handleCountdownInputChange(form));
+        });
+
+        const dateInput = form.querySelector('.timer-date-input');
+        if (dateInput) {
+            dateInput.addEventListener('input', () => handleDateInputChange(form));
+        }
+    }
 }
 
 function markFeedItemAsRead(itemId) {
@@ -768,6 +1714,9 @@ function attachFolderClickHandlers() {
         btn.addEventListener('click', () => {
             const folderId = btn.dataset.folderId;
             STATE.selectedFolder = folderId === 'null' ? null : parseInt(folderId);
+            // Reset pagination when folder changes
+            STATE.feedOffset = 0;
+            STATE.feedHasMore = true;
             loadNextcloudFeed(STATE.selectedFolder);
         });
     });
@@ -833,7 +1782,9 @@ function displayAppLinks() {
             domain = '';
         }
 
-        const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+        const faviconUrl = domain
+            ? `https://www.google.com/s2/favicons?domain=${domain}&sz=64`
+            : FALLBACK_FAVICON;
 
         return `
             <a href="${escapeHtml(link.url)}"
@@ -844,7 +1795,8 @@ function displayAppLinks() {
                 <img src="${iconPath || faviconUrl}"
                      alt="${escapeHtml(link.name)}"
                      class="app-icon-image"
-                     onerror="this.onerror=null; this.src='${escapeHtml(faviconUrl)}';">
+                     data-fallback-url="${iconPath ? escapeHtml(faviconUrl) : ''}"
+                     onerror="handleAppIconError(this);">
                 <div class="app-icon-title">${escapeHtml(link.name)}</div>
             </a>
         `;
@@ -945,7 +1897,8 @@ function parseBookmarkNode(node, depth = 0) {
                 bookmarks.push({
                     type: 'bookmark',
                     name: a.textContent,
-                    url: a.href
+                    url: a.href,
+                    icon: a.getAttribute('ICON') || a.getAttribute('icon') || null
                 });
             }
         }
@@ -972,8 +1925,13 @@ function displayBookmarksTree() {
         return;
     }
 
-    console.log(`[Bookmarks] Displaying ${STATE.bookmarks.length} bookmark folders/items`);
-    const treeHTML = buildBookmarkTree(STATE.bookmarks);
+    const visibleBookmarks = flattenBookmarkRoot(STATE.bookmarks);
+    console.log(`[Bookmarks] Displaying ${visibleBookmarks.length} bookmark folders/items (flattened)`);
+    const treeHTML = `
+        <div class="bookmark-tree">
+            ${buildBookmarkTree(visibleBookmarks)}
+        </div>
+    `;
 
     console.log('[Bookmarks] Generated HTML length:', treeHTML.length);
 
@@ -981,32 +1939,69 @@ function displayBookmarksTree() {
     DOM.text.innerHTML = treeHTML;
 }
 
+function flattenBookmarkRoot(bookmarks) {
+    if (!Array.isArray(bookmarks) || bookmarks.length === 0) return [];
+    const flattened = [];
+    bookmarks.forEach(item => {
+        if (item.type === 'folder' && item.name && item.name.trim().toLowerCase() === 'bookmarks') {
+            flattened.push(...(item.children || []));
+        } else {
+            flattened.push(item);
+        }
+    });
+    return flattened;
+}
+
 function buildBookmarkTree(bookmarks, level = 0) {
     return bookmarks.map(item => {
         if (item.type === 'folder') {
-            // Open root level folders by default
-            const openAttr = level === 0 ? ' open' : '';
+            // Calculate lightness: 100% at top level, decrease by 10% per level, minimum 50%
+            const lightness = Math.max(50, 100 - (level * 10));
+            const folderColor = `hsl(0, 0%, ${lightness}%)`;
+
+            // All folders start collapsed for cleaner overview
             return `
-                <details${openAttr} style="margin-left:${level * 1}em;">
-                    <summary style="cursor:pointer; padding:0.2rem; color:#ffd700;">
-                        ${escapeHtml(item.name)}
+                <details class="bookmark-folder">
+                    <summary class="bookmark-summary">
+                        <span class="folder-name" style="color: ${folderColor};">${escapeHtml(item.name)}</span>
+                        <img class="folder-icon" src="icons/folder.webp" alt="" />
                     </summary>
-                    <div style="margin-left:1em;">
+                    <div class="bookmark-children">
                         ${buildBookmarkTree(item.children, level + 1)}
                     </div>
                 </details>
             `;
         } else {
+            const iconSrc = escapeHtml(item.icon || FALLBACK_FAVICON);
             return `
-                <div style="margin-left:${level * 1}em; padding:0.2rem;">
-                    <a href="${escapeHtml(item.url)}" target="_blank"
-                       style="color:#4a9eff; text-decoration:none;">
-                        ${escapeHtml(item.name)}
-                    </a>
-                </div>
+                <a class="bookmark-link" href="${escapeHtml(item.url)}" target="_blank">
+                    <span class="bookmark-name">${escapeHtml(item.name)}</span>
+                    <img class="bookmark-favicon"
+                         src="${iconSrc}"
+                         alt=""
+                         onerror="handleBookmarkFaviconError(this);">
+                </a>
             `;
         }
     }).join('');
+}
+
+function handleAppIconError(img) {
+    if (!img) return;
+    const fallbackUrl = img.dataset ? img.dataset.fallbackUrl : '';
+    if (fallbackUrl && !img.dataset.fallbackApplied) {
+        img.dataset.fallbackApplied = 'true';
+        img.src = fallbackUrl;
+        return;
+    }
+    img.onerror = null;
+    img.src = FALLBACK_FAVICON;
+}
+
+function handleBookmarkFaviconError(img) {
+    if (!img) return;
+    img.onerror = null;
+    img.src = FALLBACK_FAVICON;
 }
 
 // ============================================================================
@@ -1055,8 +2050,29 @@ function enterSearchMode(clearInput = false) {
         DOM.searchInput.select();
     }
 
-    // Clear only the feed area; keep bookmarks and dock links visible
-    DOM.overview.innerHTML = '';
+    // Show quick action buttons immediately (with empty query)
+    const encodedQuery = encodeURIComponent('');
+    DOM.overview.innerHTML = `
+        <div class="quick-search-links">
+            <a href="https://duckduckgo.com/?q=${encodedQuery}" target="_blank">
+                <img src="icons/duckduckgo.svg" alt="DuckDuckGo" style="width:24px; height:24px; flex-shrink:0;">
+                <span>DuckDuckGo</span>
+            </a>
+            <a href="https://www.google.com/search?tbm=isch&q=${encodedQuery}" target="_blank">
+                <img src="icons/googleimages.png" alt="Google Images" style="width:24px; height:24px; flex-shrink:0;">
+                <span>Google Images</span>
+            </a>
+            <a href="https://www.perplexity.ai/search?q=${encodedQuery}" target="_blank">
+                <img src="icons/perplexity.svg" alt="Perplexity" style="width:24px; height:24px; flex-shrink:0;">
+                <span>Perplexity AI</span>
+            </a>
+            <button type="button" class="quick-task-btn">
+                <img src="icons/tasks.webp" alt="Tasks" style="width:24px; height:24px; flex-shrink:0;">
+                <span>Add to Tasks</span>
+            </button>
+        </div>
+    `;
+    attachQuickTaskButton(DOM.overview, '');
 }
 
 function exitSearchMode() {
@@ -1066,6 +2082,9 @@ function exitSearchMode() {
     document.body.classList.remove('search-mode');
     updateSearchTriggerIcons(false);
     console.log('[Search] Exiting search mode');
+
+    // Exit navigation mode
+    exitNavigationMode();
 
     if (DOM.searchInput) {
         DOM.searchInput.value = '';
@@ -1084,11 +2103,12 @@ function exitSearchMode() {
 }
 
 function updateSearchTriggerIcons(isActive) {
-    const icon = isActive ? '✕' : '🔍';
+    const iconSrc = isActive ? 'icons/X.webp' : 'icons/search.svg';
+    const iconAlt = isActive ? 'Close' : 'Search';
     const label = isActive ? 'Close search' : 'Open search';
 
     DOM.searchTriggers.forEach(trigger => {
-        trigger.textContent = icon;
+        trigger.innerHTML = `<img src="${iconSrc}" alt="${iconAlt}" class="${isActive ? 'close-icon' : 'search-icon'}">`;
         trigger.setAttribute('aria-label', label);
     });
 }
@@ -1098,7 +2118,29 @@ async function handleSearchInput(event) {
     const query = event.target.value.trim();
 
     if (!query) {
-        DOM.overview.innerHTML = '';
+        // Show quick action buttons even when query is empty
+        const encodedQuery = encodeURIComponent('');
+        DOM.overview.innerHTML = `
+            <div class="quick-search-links">
+                <a href="https://duckduckgo.com/?q=${encodedQuery}" target="_blank">
+                    <img src="icons/duckduckgo.svg" alt="DuckDuckGo" style="width:24px; height:24px; flex-shrink:0;">
+                    <span>DuckDuckGo</span>
+                </a>
+                <a href="https://www.google.com/search?tbm=isch&q=${encodedQuery}" target="_blank">
+                    <img src="icons/googleimages.png" alt="Google Images" style="width:24px; height:24px; flex-shrink:0;">
+                    <span>Google Images</span>
+                </a>
+                <a href="https://www.perplexity.ai/search?q=${encodedQuery}" target="_blank">
+                    <img src="icons/perplexity.svg" alt="Perplexity" style="width:24px; height:24px; flex-shrink:0;">
+                    <span>Perplexity AI</span>
+                </a>
+                <button type="button" class="quick-task-btn">
+                    <img src="icons/tasks.webp" alt="Tasks" style="width:24px; height:24px; flex-shrink:0;">
+                    <span>Add to Tasks</span>
+                </button>
+            </div>
+        `;
+        attachQuickTaskButton(DOM.overview, '');
         return;
     }
 
@@ -1112,6 +2154,9 @@ async function handleSearchInput(event) {
 async function performSearch(query) {
     STATE.lastQuery = query;
 
+    // Exit any existing navigation mode before showing new search results
+    exitNavigationMode();
+
     // Show loading in overview instead of dropdown
     DOM.overview.innerHTML = '<div style="padding:1rem; color:#888;">Searching...</div>';
 
@@ -1120,14 +2165,16 @@ async function performSearch(query) {
 
     try {
         // Fetch suggestions from all sources in parallel
-        const [wikiResults, bookmarkResults] = await Promise.all([
+        const [wikiResults, bookmarkResults, traktResults] = await Promise.all([
             searchWikipedia(query),
-            searchBookmarks(query)
+            searchBookmarks(query),
+            searchTrakt(query)
         ]);
 
         STATE.currentSuggestions = [
+            ...bookmarkResults,
             ...wikiResults,
-            ...bookmarkResults
+            ...traktResults
         ];
 
         displaySuggestions(STATE.currentSuggestions, DOM.overview);
@@ -1138,6 +2185,11 @@ async function performSearch(query) {
 }
 
 function handleSearchKeydown(event) {
+    // If in navigation mode, let the global handler deal with it
+    if (STATE.navigationMode && (event.key === 'Enter' || event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+        return;
+    }
+
     if (event.key === 'Enter') {
         const query = event.target.value.trim();
         if (STATE.currentSuggestions.length > 0) {
@@ -1202,46 +2254,118 @@ function searchBookmarks(query) {
     return results.slice(0, CONFIG.SUGGESTION_LIMIT.bookmarks);
 }
 
+async function searchTrakt(query) {
+    if (!CONFIG.TRAKT_CLIENT_ID || CONFIG.TRAKT_CLIENT_ID === 'YOUR_TRAKT_CLIENT_ID_HERE') {
+        console.log('[Trakt] API key not configured, skipping search');
+        return [];
+    }
+
+    try {
+        const url = `${CONFIG.TRAKT_API}/search/movie,show?query=${encodeURIComponent(query)}&limit=${CONFIG.SUGGESTION_LIMIT.trakt}`;
+        const response = await fetch(url, {
+            headers: {
+                'Content-Type': 'application/json',
+                'trakt-api-version': CONFIG.TRAKT_API_VERSION,
+                'trakt-api-key': CONFIG.TRAKT_CLIENT_ID
+            }
+        });
+
+        if (!response.ok) {
+            console.error('[Trakt] Search failed:', response.status, response.statusText);
+            return [];
+        }
+
+        const data = await response.json();
+
+        return data.map(item => {
+            const mediaType = item.type; // 'movie' or 'show'
+            const media = item[mediaType];
+
+            return {
+                type: 'trakt',
+                mediaType: mediaType,
+                title: media.title,
+                year: media.year,
+                description: `${mediaType === 'movie' ? 'Movie' : 'TV Show'} (${media.year || 'N/A'})`,
+                traktId: media.ids.trakt,
+                imdbId: media.ids.imdb,
+                tmdbId: media.ids.tmdb,
+                slug: media.ids.slug,
+                icon: 'Trakt'
+            };
+        });
+    } catch (error) {
+        console.error('[Trakt] Search error:', error);
+        return [];
+    }
+}
+
 // ============================================================================
 // SUGGESTIONS DISPLAY
 // ============================================================================
 
 function displaySuggestions(suggestions, container) {
+    const query = STATE.lastQuery || (DOM.searchInput ? DOM.searchInput.value.trim() : '');
+    const encodedQuery = encodeURIComponent(query);
+
+    // Build quick action buttons HTML
+    const quickActionsHTML = `
+        <div class="quick-search-links" style="margin-top: ${suggestions && suggestions.length > 0 ? '1rem' : '0'};">
+            <a href="https://duckduckgo.com/?q=${encodedQuery}" target="_blank">
+                <img src="icons/duckduckgo.svg" alt="DuckDuckGo" style="width:24px; height:24px; flex-shrink:0;">
+                <span>DuckDuckGo</span>
+            </a>
+            <a href="https://www.google.com/search?tbm=isch&q=${encodedQuery}" target="_blank">
+                <img src="icons/googleimages.png" alt="Google Images" style="width:24px; height:24px; flex-shrink:0;">
+                <span>Google Images</span>
+            </a>
+            <a href="https://www.perplexity.ai/search?q=${encodedQuery}" target="_blank">
+                <img src="icons/perplexity.svg" alt="Perplexity" style="width:24px; height:24px; flex-shrink:0;">
+                <span>Perplexity AI</span>
+            </a>
+            <button type="button" class="quick-task-btn">
+                <img src="icons/tasks.webp" alt="Tasks" style="width:24px; height:24px; flex-shrink:0;">
+                <span>Add to Tasks</span>
+            </button>
+        </div>
+    `;
+
     if (!suggestions || suggestions.length === 0) {
-        const query = STATE.lastQuery || (DOM.searchInput ? DOM.searchInput.value.trim() : '');
-        const encodedQuery = encodeURIComponent(query);
-        container.innerHTML = `
-            <div class="quick-search-links">
-                <a href="https://duckduckgo.com/?q=${encodedQuery}" target="_blank">DuckDuckGo</a>
-                <a href="https://www.google.com/search?tbm=isch&q=${encodedQuery}" target="_blank">Google Images</a>
-                <a href="https://www.perplexity.ai/search?q=${encodedQuery}" target="_blank">Perplexity AI</a>
-                <button type="button" class="quick-task-btn">Add to Tasks</button>
-            </div>
-        `;
+        container.innerHTML = quickActionsHTML;
         attachQuickTaskButton(container, query);
         return;
     }
 
     const html = suggestions.map((item, index) => {
-        let label = '';
+        let iconHTML = '';
+        let titleText = '';
+
         if (item.type === 'wikipedia') {
-            label = `[${item.icon}] ${item.title}`;
+            iconHTML = '<img src="icons/wiki.svg" alt="Wiki" style="width:24px; height:24px; flex-shrink:0;">';
+            titleText = item.title;
         } else if (item.type === 'bookmark') {
-            label = `[${item.icon}] ${item.name}`;
+            iconHTML = '<img src="icons/bookmark.webp" alt="Bookmark" style="width:24px; height:24px; flex-shrink:0;">';
+            titleText = item.name;
+        } else if (item.type === 'trakt') {
+            iconHTML = '<img src="icons/web.webp" alt="Trakt" style="width:24px; height:24px; flex-shrink:0;">';
+            titleText = item.title;
         }
 
         return `
             <div class="suggestion-item" data-index="${index}"
-                 style="padding:0.75rem; cursor:pointer; border-bottom:1px solid #333;">
-                ${escapeHtml(label)}
-                ${item.description ? `<div style="font-size:0.85em; color:#888; margin-top:0.2rem;">${escapeHtml(item.description)}</div>` : ''}
+                 style="padding:0.75rem; cursor:pointer; border-bottom:1px solid #333; display:flex; align-items:flex-start; gap:0.4rem;">
+                ${iconHTML}
+                <div style="flex:1;">
+                    <div>${escapeHtml(titleText)}</div>
+                    ${item.description ? `<div style="font-size:0.85em; color:#888; margin-top:0.2rem;">${escapeHtml(item.description)}</div>` : ''}
+                </div>
             </div>
         `;
     }).join('');
 
-    container.innerHTML = html;
+    container.innerHTML = html + quickActionsHTML;
 
-    // Add click handlers
+    // Add click handlers for suggestions
     container.querySelectorAll('.suggestion-item').forEach(el => {
         el.addEventListener('click', () => {
             const index = parseInt(el.dataset.index);
@@ -1256,6 +2380,12 @@ function displaySuggestions(suggestions, container) {
             el.style.background = '';
         });
     });
+
+    // Attach the task button handler
+    attachQuickTaskButton(container, query);
+
+    // Enable keyboard navigation for search results
+    enterSearchNavigationMode();
 }
 
 function attachQuickTaskButton(container, query) {
@@ -1276,7 +2406,7 @@ function initTaskModal() {
         <div class="task-modal-dialog">
             <div class="task-modal-header">
                 <h2>Add to Tasks</h2>
-                <button type="button" class="task-modal-close" aria-label="Close">&times;</button>
+                <button type="button" class="task-modal-close" aria-label="Close"><img src="icons/X.webp" alt="Close" class="close-icon"></button>
             </div>
             <form id="task-form">
                 <label>
@@ -1407,19 +2537,33 @@ async function createNextcloudTask(task) {
     }
     const taskUrl = `${baseUrl}${calendarPath}${uid}.ics`;
 
+    console.log('[Task] Creating task at:', taskUrl);
+
     const auth = btoa(`${CONFIG.NEXTCLOUD_USER}:${CONFIG.NEXTCLOUD_PASS}`);
 
-    const response = await fetch(taskUrl, {
-        method: 'PUT',
-        headers: {
-            'Authorization': `Basic ${auth}`,
-            'Content-Type': 'text/calendar; charset=utf-8'
-        },
-        body: icsBody
-    });
+    try {
+        const response = await fetch(taskUrl, {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Basic ${auth}`,
+                'Content-Type': 'text/calendar; charset=utf-8'
+            },
+            body: icsBody
+        });
 
-    if (!response.ok) {
-        throw new Error('Nextcloud rejected the task request.');
+        if (!response.ok) {
+            const errorText = await response.text().catch(() => 'No error details');
+            console.error('[Task] Failed:', response.status, response.statusText, errorText);
+            throw new Error(`Failed (${response.status}): ${response.statusText}`);
+        }
+
+        console.log('[Task] Successfully created');
+    } catch (error) {
+        console.error('[Task] Fetch error:', error);
+        if (error.message.includes('Failed to fetch')) {
+            throw new Error('Network error: Check CORS settings or calendar path');
+        }
+        throw error;
     }
 }
 
@@ -1453,11 +2597,16 @@ function generateUID() {
 function selectSuggestion(item) {
     console.log('[Search] Selected:', item);
 
+    // Exit navigation mode when a selection is made
+    exitNavigationMode();
+
     if (item.type === 'wikipedia') {
         loadWikipediaArticle(item.title);
     } else if (item.type === 'bookmark') {
         window.open(item.url, '_blank');
         exitSearchMode();
+    } else if (item.type === 'trakt') {
+        loadTraktItem(item);
     }
 }
 
@@ -1486,6 +2635,66 @@ async function loadWikipediaArticle(title) {
     }
 }
 
+function cleanWikipediaHTML(element) {
+    // Remove all inline styles
+    element.querySelectorAll('[style]').forEach(el => {
+        el.removeAttribute('style');
+    });
+
+    // Remove Wikipedia-specific classes but keep semantic HTML
+    element.querySelectorAll('[class]').forEach(el => {
+        el.removeAttribute('class');
+    });
+
+    // Style all tables with gray outline and transparent background
+    element.querySelectorAll('table').forEach(table => {
+        table.style.border = '1px solid #888';
+        table.style.borderCollapse = 'collapse';
+        table.style.width = '100%';
+        table.style.background = 'transparent';
+        table.style.marginBottom = '1rem';
+    });
+
+    // Style table cells
+    element.querySelectorAll('td, th').forEach(cell => {
+        cell.style.border = '1px solid #666';
+        cell.style.padding = '0.5rem';
+        cell.style.background = 'transparent';
+    });
+
+    // Style table headers
+    element.querySelectorAll('th').forEach(th => {
+        th.style.fontWeight = '600';
+        th.style.color = '#ccc';
+    });
+
+    // Remove background colors from all elements
+    element.querySelectorAll('*').forEach(el => {
+        if (el.style.backgroundColor) {
+            el.style.backgroundColor = 'transparent';
+        }
+        if (el.style.background && el.style.background !== 'transparent') {
+            el.style.background = 'transparent';
+        }
+    });
+
+    // Clean up images
+    element.querySelectorAll('img').forEach(img => {
+        img.style.maxWidth = '100%';
+        img.style.height = 'auto';
+        img.style.background = 'transparent';
+    });
+
+    // Remove width attributes that might constrain layout
+    element.querySelectorAll('[width]').forEach(el => {
+        if (el.tagName !== 'TABLE') {
+            el.removeAttribute('width');
+        }
+    });
+
+    return element;
+}
+
 function displayWikipediaArticle(article) {
     // Update page title
     if (DOM.pageTitleText) {
@@ -1502,8 +2711,37 @@ function displayWikipediaArticle(article) {
     // Extract infobox
     const infobox = tempDiv.querySelector('.infobox');
     let infoboxHTML = '';
+    let infoboxImageHTML = '';
+
     if (infobox) {
-        infobox.style.outline = '1px solid gray';
+        // Extract the main image from infobox before cleaning
+        const infoboxImage = infobox.querySelector('img');
+        if (infoboxImage) {
+            // Clone the image
+            const imgClone = infoboxImage.cloneNode(true);
+            imgClone.style.maxWidth = '100%';
+            imgClone.style.height = 'auto';
+            imgClone.style.display = 'block';
+            imgClone.style.margin = '0 auto';
+            infoboxImageHTML = `<div style="margin-bottom:1rem;">${imgClone.outerHTML}</div>`;
+
+            // Remove the image row and any caption row from the infobox
+            const imageRow = infoboxImage.closest('tr');
+            if (imageRow) {
+                // Get the next row before removing the image row
+                const nextRow = imageRow.nextElementSibling;
+
+                imageRow.remove();
+
+                // Also remove the next row if it contains a caption (typically short text or has caption class)
+                if (nextRow && (nextRow.textContent.trim().length < 200 || nextRow.querySelector('[class*="caption"]'))) {
+                    nextRow.remove();
+                }
+            }
+        }
+
+        cleanWikipediaHTML(infobox);
+        infobox.style.outline = '1px solid #888';
         infobox.style.width = '100%';
         infoboxHTML = infobox.outerHTML;
         infobox.remove();
@@ -1517,7 +2755,7 @@ function displayWikipediaArticle(article) {
             .map(section => {
                 return `
                     <div class="toc-item" data-anchor="${escapeHtml(section.anchor)}"
-                         style="padding:0.5rem; cursor:pointer; border-bottom:1px solid #333; transition:background 0.2s ease;">
+                         style="padding:0.5rem; cursor:pointer; border-bottom:1px solid #333; background:transparent; transition:background 0.2s ease;">
                         <span style="color:#888;">${section.number}</span>
                         <span style="margin-left:0.5rem;">${escapeHtml(section.line)}</span>
                     </div>
@@ -1526,7 +2764,7 @@ function displayWikipediaArticle(article) {
             .join('');
 
         tocHTML = `
-            <div style="background:#1a1a1a; border:1px solid #444; padding:0.75rem;">
+            <div style="background:transparent; border:1px solid #888; padding:0.75rem;">
                 <div style="font-weight:bold; margin-bottom:0.5rem;">Contents</div>
                 ${tocItems}
             </div>
@@ -1537,6 +2775,7 @@ function displayWikipediaArticle(article) {
     if (!tocHTML) {
         const toc = tempDiv.querySelector('#toc, .toc');
         if (toc) {
+            cleanWikipediaHTML(toc);
             tocHTML = toc.outerHTML;
             toc.remove();
         }
@@ -1545,6 +2784,9 @@ function displayWikipediaArticle(article) {
     // Clean up the full article content
     tempDiv.querySelectorAll('sup.reference').forEach(el => el.remove());
     tempDiv.querySelectorAll('.mw-editsection').forEach(el => el.remove());
+
+    // Apply cleaning to remove Wikipedia formatting
+    cleanWikipediaHTML(tempDiv);
 
     // Display full article in text
     DOM.text.innerHTML = `
@@ -1561,7 +2803,10 @@ function displayWikipediaArticle(article) {
     // Display TOC and infobox in overview
     DOM.overview.innerHTML = `
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:1%;">
-            <div>${tocHTML || '<p>No table of contents</p>'}</div>
+            <div>
+                ${infoboxImageHTML}
+                ${tocHTML || '<p>No table of contents</p>'}
+            </div>
             <div>${infoboxHTML || '<p>No infobox available</p>'}</div>
         </div>
     `;
@@ -1623,6 +2868,214 @@ function displayWikipediaArticle(article) {
     } else {
         DOM.dock.innerHTML = '';
     }
+}
+
+// ============================================================================
+// TRAKT.TV DISPLAY
+// ============================================================================
+
+async function loadTraktItem(item) {
+    try {
+        // Show loading state
+        DOM.text.innerHTML = '<div style="padding:1rem; color:#888;">Loading from Trakt.tv...</div>';
+        DOM.overview.innerHTML = '<div style="padding:1rem; color:#888;">Loading details...</div>';
+        DOM.dock.innerHTML = '';
+
+        // Update page title
+        if (DOM.pageTitleText) {
+            DOM.pageTitleText.textContent = item.title;
+        } else if (DOM.pageTitle) {
+            DOM.pageTitle.innerHTML = `<p>${escapeHtml(item.title)}</p>`;
+        }
+        DOM.subtitle.innerHTML = `<p>Trakt.tv - ${item.mediaType === 'movie' ? 'Movie' : 'TV Show'}</p>`;
+
+        // Fetch detailed information
+        const detailUrl = `${CONFIG.TRAKT_API}/${item.mediaType}s/${item.slug}?extended=full`;
+        const response = await fetch(detailUrl, {
+            headers: {
+                'Content-Type': 'application/json',
+                'trakt-api-version': CONFIG.TRAKT_API_VERSION,
+                'trakt-api-key': CONFIG.TRAKT_CLIENT_ID
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to fetch details: ${response.status}`);
+        }
+
+        const details = await response.json();
+
+        // Display overview/plot in text area
+        DOM.text.innerHTML = `
+            <div style="line-height:1.6;">
+                <h2>${escapeHtml(details.title)} ${details.year ? `(${details.year})` : ''}</h2>
+                ${details.tagline ? `<p style="font-style:italic; color:#888; margin-bottom:1rem;">"${escapeHtml(details.tagline)}"</p>` : ''}
+                <p>${escapeHtml(details.overview || 'No overview available.')}</p>
+                <p style="margin-top:1.5rem;">
+                    <button id="add-to-trakt-history" style="
+                        padding: 0.75rem 1.5rem;
+                        background: #ed1c24;
+                        color: white;
+                        border: none;
+                        border-radius: 6px;
+                        font-size: 1rem;
+                        cursor: pointer;
+                        font-weight: 600;
+                    ">Add to Watch History</button>
+                    <span id="trakt-status" style="margin-left:1rem; color:#888;"></span>
+                </p>
+                <p style="margin-top:1rem;">
+                    <a href="https://trakt.tv/${item.mediaType}s/${item.slug}"
+                       target="_blank"
+                       style="color:#4a9eff;">
+                        View on Trakt.tv
+                    </a>
+                </p>
+            </div>
+        `;
+
+        // Add event listener for "Add to Watch History" button
+        document.getElementById('add-to-trakt-history').addEventListener('click', async () => {
+            const statusEl = document.getElementById('trakt-status');
+            statusEl.textContent = 'Adding...';
+            statusEl.style.color = '#888';
+
+            try {
+                await addToTraktHistory(item);
+                statusEl.textContent = '✓ Added to watch history!';
+                statusEl.style.color = '#4a9eff';
+            } catch (error) {
+                statusEl.textContent = '✗ Failed to add';
+                statusEl.style.color = '#f88';
+                console.error('[Trakt] Failed to add to history:', error);
+            }
+        });
+
+        // Display metadata in overview
+        const metadataHTML = `
+            <div style="background:#1a1a1a; border:1px solid #444; padding:1rem; border-radius:8px;">
+                <h3 style="margin-bottom:1rem;">Details</h3>
+                <table style="width:100%; border-collapse:collapse;">
+                    ${details.year ? `<tr><td style="padding:0.5rem 0; color:#888;">Year</td><td style="padding:0.5rem 0;">${details.year}</td></tr>` : ''}
+                    ${details.runtime ? `<tr><td style="padding:0.5rem 0; color:#888;">Runtime</td><td style="padding:0.5rem 0;">${details.runtime} min</td></tr>` : ''}
+                    ${details.genres && details.genres.length ? `<tr><td style="padding:0.5rem 0; color:#888;">Genres</td><td style="padding:0.5rem 0;">${details.genres.join(', ')}</td></tr>` : ''}
+                    ${details.rating ? `<tr><td style="padding:0.5rem 0; color:#888;">Rating</td><td style="padding:0.5rem 0;">${details.rating.toFixed(1)}/10</td></tr>` : ''}
+                    ${details.language ? `<tr><td style="padding:0.5rem 0; color:#888;">Language</td><td style="padding:0.5rem 0;">${details.language.toUpperCase()}</td></tr>` : ''}
+                    ${details.status ? `<tr><td style="padding:0.5rem 0; color:#888;">Status</td><td style="padding:0.5rem 0;">${details.status}</td></tr>` : ''}
+                </table>
+            </div>
+        `;
+
+        DOM.overview.innerHTML = metadataHTML;
+
+        // Display external links in dock
+        const externalLinks = [];
+
+        // Add Wikipedia link (internal navigation)
+        externalLinks.push({
+            wikiTitle: details.title,
+            name: 'Wikipedia',
+            icon: 'icons/wiki.svg',
+            isInternal: true
+        });
+
+        if (item.imdbId) {
+            externalLinks.push({ url: `https://www.imdb.com/title/${item.imdbId}`, name: 'IMDb', icon: 'imdb.com' });
+        }
+        if (item.tmdbId) {
+            const tmdbUrl = item.mediaType === 'movie'
+                ? `https://www.themoviedb.org/movie/${item.tmdbId}`
+                : `https://www.themoviedb.org/tv/${item.tmdbId}`;
+            externalLinks.push({ url: tmdbUrl, name: 'TMDB', icon: 'themoviedb.org' });
+        }
+        externalLinks.push({ url: `https://trakt.tv/${item.mediaType}s/${item.slug}`, name: 'Trakt', icon: 'trakt.tv' });
+
+        if (externalLinks.length > 0) {
+            const linksHTML = externalLinks.map(link => {
+                if (link.isInternal && link.wikiTitle) {
+                    // Wikipedia internal link
+                    return `
+                        <a href="#" class="wiki-internal-link" data-wiki-title="${escapeHtml(link.wikiTitle)}" style="margin:0.5rem; display:inline-block;">
+                            <img src="${link.icon}"
+                                 alt="${escapeHtml(link.name)}"
+                                 title="${escapeHtml(link.name)}"
+                                 style="width:32px; height:32px;">
+                        </a>
+                    `;
+                } else {
+                    // External link
+                    const iconSrc = `https://www.google.com/s2/favicons?domain=${link.icon}&sz=64`;
+                    return `
+                        <a href="${escapeHtml(link.url)}" target="_blank" style="margin:0.5rem; display:inline-block;">
+                            <img src="${iconSrc}"
+                                 alt="${escapeHtml(link.name)}"
+                                 title="${escapeHtml(link.name)}"
+                                 style="width:32px; height:32px;">
+                        </a>
+                    `;
+                }
+            }).join('');
+
+            DOM.dock.innerHTML = linksHTML;
+
+            // Add event listeners to Wikipedia internal links
+            document.querySelectorAll('.wiki-internal-link').forEach(link => {
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const wikiTitle = link.getAttribute('data-wiki-title');
+                    if (wikiTitle) {
+                        loadWikipediaArticle(wikiTitle);
+                    }
+                });
+            });
+        }
+
+    } catch (error) {
+        console.error('[Trakt] Error loading item:', error);
+        showError(`Failed to load from Trakt.tv: ${error.message}`);
+    }
+}
+
+async function addToTraktHistory(item) {
+    if (!CONFIG.TRAKT_ACCESS_TOKEN || CONFIG.TRAKT_ACCESS_TOKEN === 'YOUR_TRAKT_ACCESS_TOKEN_HERE') {
+        throw new Error('Trakt access token not configured');
+    }
+
+    const payload = {
+        [item.mediaType === 'movie' ? 'movies' : 'shows']: [
+            {
+                watched_at: new Date().toISOString(),
+                ids: {
+                    trakt: item.traktId,
+                    ...(item.imdbId && { imdb: item.imdbId }),
+                    ...(item.tmdbId && { tmdb: item.tmdbId })
+                }
+            }
+        ]
+    };
+
+    console.log('[Trakt] Adding to history:', payload);
+
+    const response = await fetch(`${CONFIG.TRAKT_API}/sync/history`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'trakt-api-version': CONFIG.TRAKT_API_VERSION,
+            'trakt-api-key': CONFIG.TRAKT_CLIENT_ID,
+            'Authorization': `Bearer ${CONFIG.TRAKT_ACCESS_TOKEN}`
+        },
+        body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unknown error');
+        console.error('[Trakt] Add to history failed:', response.status, errorText);
+        throw new Error(`Failed to add to history (${response.status})`);
+    }
+
+    const result = await response.json();
+    console.log('[Trakt] Successfully added to history:', result);
+    return result;
 }
 
 // ============================================================================
