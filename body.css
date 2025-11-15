@@ -318,7 +318,7 @@ overview {
     grid-area: overview;
     outline: 2px solid hsla(120, 100%, 50%, var(--outline));;
     overflow: auto;
-    padding: 0 1rem 1rem 1rem;
+    padding: 0 1% 1% 1%;
     min-height: 0;
 }
 
@@ -754,20 +754,16 @@ dock {
 
 .feed-controls {
     position: sticky;
-    top: 0;
+    bottom: 0;
     z-index: 5;
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-    padding: 0.6rem 0.5rem 0.75rem;
-    margin-bottom: 0.75rem;
+    padding: 0.75rem 0.5rem 0rem;
+    margin-top: 0.75rem;
     background: var(--bg-feed-controls);
-    border-bottom: 1px solid var(--border-feed);
+    border-top: 1px solid var(--border-feed);
     outline: 2px solid hsla(270, 100%, 50%, var(--outline));
-}
-
-overview .feed-controls:first-child {
-    margin-top: 0;
 }
 
 .timer-panel {
@@ -784,6 +780,19 @@ overview .feed-controls:first-child {
 
 .timer-panel.open {
     display: flex;
+}
+
+.timer-panel-fullscreen {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+    padding: 1rem;
+}
+
+.timer-panel-fullscreen .timer-panel {
+    display: flex;
+    flex: 1;
 }
 
 .timer-add-form {

@@ -31,7 +31,7 @@ const CONFIG = {
     UPDATE_TIME_INTERVAL: 1000, // Update clock every second
     SHOW_POST_CONTENT: true, // Show post content in cards
     POST_CONTENT_LIMIT: 280, // Character limit for post preview
-    TIMERS_API_BASE: 'https://timers.cloudflare-ceremony099.workers.dev',
+    TIMERS_API_BASE: 'https://timers-kv.cloudflare-ceremony099.workers.dev',
     TIMERS_BOARD_ID: 'main',
     TIMER_TICK_INTERVAL: 500
 };
@@ -824,6 +824,7 @@ function formatRemaining(ms) {
 function toggleTimerPanel() {
     STATE.timerPanelVisible = !STATE.timerPanelVisible;
     syncTimerPanelState();
+    displayFeed(); // Refresh the display to show/hide timer panel
 }
 
 function syncTimerPanelState() {
@@ -1060,11 +1061,20 @@ async function loadNextcloudFeeds() {
 async function loadNextcloudFeed(folderId = null, appendMode = false) {
     if (!CONFIG.NEXTCLOUD_URL || CONFIG.NEXTCLOUD_USER === 'YOUR_USERNAME') {
         STATE.latestItems = [];
-        const placeholder = '<p style="padding:1rem;"><em>Configure Nextcloud credentials to see your news feed</em></p>';
-        DOM.overview.innerHTML = getFeedControlsHTML() + placeholder;
-        attachViewToggleHandlers();
-        attachFolderClickHandlers();
-        attachTimerControlHandlers();
+
+        // If timer panel is visible, show it in fullscreen (no feed controls)
+        if (STATE.timerPanelVisible) {
+            const timerHTML = `<div class="timer-panel-fullscreen">${displayTimerPanel()}</div>`;
+            DOM.overview.innerHTML = timerHTML;
+            attachTimerControlHandlers();
+        } else {
+            const placeholder = '<p style="padding:1rem;"><em>Configure Nextcloud credentials to see your news feed</em></p>';
+            DOM.overview.innerHTML = placeholder + getFeedControlsHTML();
+            attachViewToggleHandlers();
+            attachFolderClickHandlers();
+            attachTimerControlHandlers();
+        }
+
         renderTimerLists();
         syncTimerPanelState();
         return;
@@ -1120,11 +1130,20 @@ async function loadNextcloudFeed(folderId = null, appendMode = false) {
         processReadSyncQueue();
     } catch (error) {
         console.error('Feed fetch error:', error);
-        const message = '<p style="padding:1rem;"><em>Unable to load news feed</em></p>';
-        DOM.overview.innerHTML = getFeedControlsHTML() + message;
-        attachViewToggleHandlers();
-        attachFolderClickHandlers();
-        attachTimerControlHandlers();
+
+        // If timer panel is visible, show it in fullscreen (no feed controls)
+        if (STATE.timerPanelVisible) {
+            const timerHTML = `<div class="timer-panel-fullscreen">${displayTimerPanel()}</div>`;
+            DOM.overview.innerHTML = timerHTML;
+            attachTimerControlHandlers();
+        } else {
+            const message = '<p style="padding:1rem;"><em>Unable to load news feed</em></p>';
+            DOM.overview.innerHTML = message + getFeedControlsHTML();
+            attachViewToggleHandlers();
+            attachFolderClickHandlers();
+            attachTimerControlHandlers();
+        }
+
         renderTimerLists();
         syncTimerPanelState();
     }
@@ -1226,11 +1245,25 @@ function displayFeed() {
     const controlsHTML = getFeedControlsHTML();
     const items = getFilteredFeedItems();
 
+    // If timer panel is visible, show only the timer panel (no feed controls)
+    if (STATE.timerPanelVisible) {
+        const timerHTML = `
+            <div class="timer-panel-fullscreen">
+                ${displayTimerPanel()}
+            </div>
+        `;
+        DOM.overview.innerHTML = timerHTML;
+        attachTimerControlHandlers();
+        renderTimerLists();
+        syncTimerPanelState();
+        return;
+    }
+
     if (!items || items.length === 0) {
         const message = STATE.feedViewFilter === 'all'
             ? '<p style="padding:1rem;"><em>No items to display</em></p>'
             : '<p style="padding:1rem;"><em>No unread items</em></p>';
-        DOM.overview.innerHTML = controlsHTML + message;
+        DOM.overview.innerHTML = message + controlsHTML;
         attachViewToggleHandlers();
         attachFolderClickHandlers();
         attachTimerControlHandlers();
@@ -1254,7 +1287,7 @@ function displayFeed() {
         </div>
     ` : '';
 
-    DOM.overview.innerHTML = controlsHTML + feedHTML + loadMoreHTML;
+    DOM.overview.innerHTML = feedHTML + loadMoreHTML + controlsHTML;
     renderTimerLists();
     attachViewToggleHandlers();
     attachFolderClickHandlers();
@@ -1290,7 +1323,7 @@ function attachLoadMoreHandler() {
 function getFeedControlsHTML() {
     return `
         <div class="feed-controls">
-            ${displayTimerPanel()}
+            ${!STATE.timerPanelVisible ? displayTimerPanel() : ''}
             ${displayFolderMenu()}
         </div>
     `;
