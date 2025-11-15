@@ -497,7 +497,7 @@ function updateClock() {
     }
 
     if (DOM.subtitle) {
-        DOM.subtitle.innerHTML = `<p>${dateString}</p>`;
+        DOM.subtitle.innerHTML = `<p><a href="https://cloud.jumperlink.net/apps/calendar/timeGridWeek/now" target="_blank">${dateString}</a></p>`;
     }
 }
 
@@ -1132,20 +1132,12 @@ async function loadNextcloudFeed(folderId = null, appendMode = false) {
 
 function displayViewToggle() {
     const nextView = STATE.feedViewFilter === 'unviewed' ? 'all' : 'unviewed';
-    const label = STATE.feedViewFilter === 'unviewed' ? '🟢 New' : '⚫ New';
+    const label = STATE.feedViewFilter === 'unviewed' ? '🔵 New' : '⚫ New';
     const activeClass = STATE.feedViewFilter === 'unviewed' ? ' is-active' : '';
 
     return `
         <button class="view-toggle-chip${activeClass}" data-view="${nextView}">
             ${label}
-        </button>
-    `;
-}
-
-function displayTimerToggleButton() {
-    return `
-        <button class="timer-toggle-btn${STATE.timerPanelVisible ? ' active' : ''}" type="button">
-            ⏱
         </button>
     `;
 }
@@ -1204,7 +1196,6 @@ function displayFolderMenu() {
     if (STATE.folders.length === 0) {
         return `
             <div class="feed-folder-menu">
-                ${displayTimerToggleButton()}
                 ${displayViewToggle()}
             </div>
         `;
@@ -1213,7 +1204,6 @@ function displayFolderMenu() {
     const isAllActive = STATE.selectedFolder === null;
     const menuHTML = `
         <div class="feed-folder-menu">
-            ${displayTimerToggleButton()}
             ${displayViewToggle()}
             <button class="folder-btn ${isAllActive ? 'active' : ''}" data-folder-id="null">
                 All
@@ -1556,12 +1546,6 @@ function attachViewToggleHandlers() {
 }
 
 function attachTimerControlHandlers() {
-    const toggleBtn = document.querySelector('.timer-toggle-btn');
-    if (toggleBtn && !toggleBtn.dataset.bound) {
-        toggleBtn.dataset.bound = 'true';
-        toggleBtn.addEventListener('click', toggleTimerPanel);
-    }
-
     const timerPanel = document.querySelector('.timer-panel');
     if (timerPanel && !timerPanel.dataset.bound) {
         timerPanel.dataset.bound = 'true';
@@ -1955,15 +1939,11 @@ function flattenBookmarkRoot(bookmarks) {
 function buildBookmarkTree(bookmarks, level = 0) {
     return bookmarks.map(item => {
         if (item.type === 'folder') {
-            // Calculate lightness: 100% at top level, decrease by 10% per level, minimum 50%
-            const lightness = Math.max(50, 100 - (level * 10));
-            const folderColor = `hsl(0, 0%, ${lightness}%)`;
-
             // All folders start collapsed for cleaner overview
             return `
                 <details class="bookmark-folder">
                     <summary class="bookmark-summary">
-                        <span class="folder-name" style="color: ${folderColor};">${escapeHtml(item.name)}</span>
+                        <span class="folder-name">${escapeHtml(item.name)}</span>
                         <img class="folder-icon" src="icons/folder.webp" alt="" />
                     </summary>
                     <div class="bookmark-children">

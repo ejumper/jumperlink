@@ -58,7 +58,92 @@
 
 :root {
     --outline: 0;
-    --linear-gradient: linear-gradient(hsla(200, 100%, 50%, 0.3) 0%, hsla(243, 100%, 50%, 0.1) 10%, hsla(240, 100%, 20%, .05) 70%, hsla(200, 100%, 21%, .25) 97%);
+    --background: hsla(240, 100%, 50%, .15);
+
+    /* Color scheme variables */
+    --bg-primary: black;
+    --bg-secondary: #0c0c0c;
+    --bg-tertiary: #111;
+    --bg-overlay: rgba(0, 0, 0, 0.7);
+    --bg-card: rgba(12, 16, 28, 0.85);
+    --bg-transparent: rgba(0, 0, 0, 0);
+    --bg-semi: rgba(0, 0, 0, 0.5);
+    --bg-semi-light: rgba(0, 0, 0, 0.55);
+    --bg-hover: #2a2a2a;
+    --bg-input: #111;
+    --bg-timer-panel: rgba(5, 8, 16, 0.78);
+    --bg-timer-list: rgba(0, 0, 0, 0.4);
+    --bg-finished: rgba(20, 10, 0, 0.75);
+    --bg-feed-controls: rgba(0, 0, 0, 0);
+    --bg-folder-btn: rgba(6, 8, 15, 0.55);
+    --bg-load-more: #131313;
+
+    --text-primary: white;
+    --text-secondary: #dfe6ff;
+    --text-tertiary: #cfd3db;
+    --text-muted: rgba(255, 255, 255, 0.5);
+    --text-gray: #c7c7c7;
+    --text-light-blue: #f1f5ff;
+
+    --border-primary: #444;
+    --border-secondary: #333;
+    --border-light: rgba(255, 255, 255, 0.1);
+    --border-lighter: rgba(255, 255, 255, 0.06);
+    --border-input: rgba(255, 255, 255, 0.15);
+    --border-feed: rgba(255, 255, 255, 0.1);
+    --border-bookmark: hsl(230, 50%, 30%);
+
+    --infobox-bg: #1a1a1a;
+
+    /* Hover effect variables */
+    --hover-bg: rgba(74, 158, 255, 0.1);
+    --hover-scale: 1.05;
+    --hover-transition: transform 0.2s ease, background 0.15s ease;
+}
+
+@media (prefers-color-scheme: light) {
+    :root {
+        --bg-primary: white;
+        --bg-secondary: #f5f5f5;
+        --bg-tertiary: #eeeeee;
+        --bg-overlay: rgba(255, 255, 255, 0.9);
+        --bg-card: rgba(245, 248, 255, 0.95);
+        --bg-transparent: rgba(255, 255, 255, 0);
+        --bg-semi: rgba(255, 255, 255, 0.7);
+        --bg-semi-light: rgba(255, 255, 255, 0.75);
+        --bg-hover: #e8e8e8;
+        --bg-input: #fafafa;
+        --bg-timer-panel: rgba(250, 252, 255, 0.95);
+        --bg-timer-list: rgba(240, 240, 240, 0.6);
+        --bg-finished: rgba(255, 250, 235, 0.9);
+        --bg-feed-controls: rgba(255, 255, 255, 0);
+        --bg-folder-btn: rgba(248, 250, 255, 0.8);
+        --bg-load-more: #f8f8f8;
+
+        --text-primary: black;
+        --text-secondary: #1a1a2e;
+        --text-tertiary: #2c2c3c;
+        --text-muted: rgba(0, 0, 0, 0.5);
+        --text-gray: #383838;
+        --text-light-blue: #0e1020;
+
+        --border-primary: #ccc;
+        --border-secondary: #ddd;
+        --border-light: rgba(0, 0, 0, 0.1);
+        --border-lighter: rgba(0, 0, 0, 0.06);
+        --border-input: rgba(0, 0, 0, 0.2);
+        --border-feed: rgba(0, 0, 0, 0.1);
+        --border-bookmark: hsla(212, 30%, 70%, 1);
+
+        --infobox-bg: #fafafa;
+
+       
+
+        /* Hover effect variables (same in both modes) */
+        --hover-bg: rgba(74, 158, 255, 0.1);
+        --hover-scale: 1.05;
+        --hover-transition: transform 0.2s ease, background 0.15s ease;
+    }
 }
 
 
@@ -89,8 +174,8 @@ body {
     gap: 1%;
     height: 100vh;
     padding: 1%;
-    background: black;
-    color: white;
+    background: var(--bg-primary);
+    color: var(--text-primary);
     font-family: 'Input', 'ProLisa', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     font-size: 16px;
     line-height: 1.5;
@@ -137,8 +222,8 @@ header {
     display: grid;
     grid-template-columns: 1fr;
     grid-template-areas: "main-text";
-    gap: 1%;
-    padding: 1%;
+    
+    padding-left: 3.7%;
     min-height: 0;
 }
 
@@ -192,11 +277,11 @@ page-title a:hover {
 }
 
 .clock-toggle.active {
-    color: #7ab044;
+    color: hsl(241, 44%, 48%);
 }
 
 .clock-toggle:focus-visible {
-    outline: 2px solid rgba(122, 176, 68, 0.5);
+    outline: 2px solid blue;
     outline-offset: 4px;
 }
 
@@ -208,10 +293,25 @@ subtitle {
 subtitle a {
     cursor: pointer;
     transition: color 0.2s ease;
+    color: #ffffff;
+    font-size: 1.1rem;
 }
 
 subtitle a:hover {
-    color: #7bb8ff;
+    color: #a7d6ff;
+}
+@media (prefers-color-scheme: light) {
+    subtitle a {
+        color: #000000;
+    }
+
+    subtitle a:hover {
+        color: #4a9eff;
+    }
+}
+
+body.light-mode details.bookmark-folder > summary {
+    color: #000000;
 }
 
 overview {
@@ -253,7 +353,7 @@ header search-container {
 search-container .search-trigger {
     background: none;
     border: none;
-    color: white;
+    color: var(--text-primary);
     font-size: 1.5rem;
     cursor: pointer;
     padding: 0.2rem 0.4rem;
@@ -275,7 +375,7 @@ search-container .search-trigger:hover {
     width: 100%;
     background: transparent;
     border: none;
-    color: white;
+    color: var(--text-primary);
     font-size: 1.8rem;
     font-family: 'ProLisa', 'Input Sans Narrow', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     padding: 0;
@@ -310,7 +410,7 @@ body.task-modal-open {
     text-decoration: none;
     padding: 0.75rem;
     background: transparent;
-    border-bottom: 1px solid #333;
+    border-bottom: 1px solid var(--border-secondary);
     cursor: pointer;
     transition: background 0.2s ease;
     display: flex;
@@ -326,13 +426,13 @@ body.task-modal-open {
 }
 
 .quick-search-links a:hover {
-    background: #2a2a2a;
+    background: var(--bg-hover);
 }
 
 .quick-task-btn {
     padding: 0.75rem;
     border: none;
-    border-bottom: 1px solid #333;
+    border-bottom: 1px solid var(--border-secondary);
     background: transparent;
     color: #4a9eff;
     cursor: pointer;
@@ -347,7 +447,7 @@ body.task-modal-open {
 }
 
 .quick-task-btn:hover {
-    background: #2a2a2a;
+    background: var(--bg-hover);
 }
 
 .quick-search-links img {
@@ -372,13 +472,13 @@ body.task-modal-open {
 .task-modal-overlay {
     position: absolute;
     inset: 0;
-    background: rgba(0, 0, 0, 0.7);
+    background: var(--bg-overlay);
 }
 
 .task-modal-dialog {
     position: relative;
-    background: #0c0c0c;
-    border: 1px solid #4a9eff;
+    background: var(--bg-secondary);
+    border: 1px solid #504aff;
     border-radius: 12px;
     padding: 1.5rem;
     width: min(420px, 90%);
@@ -397,7 +497,7 @@ body.task-modal-open {
 .task-modal-close {
     background: none;
     border: none;
-    color: #fff;
+    color: var(--text-primary);
     font-size: 1.5rem;
     cursor: pointer;
     padding: 0;
@@ -437,9 +537,9 @@ body.task-modal-open {
 
 #task-form input,
 #task-form textarea {
-    background: #111;
-    border: 1px solid #444;
-    color: #fff;
+    background: var(--bg-input);
+    border: 1px solid var(--border-primary);
+    color: var(--text-primary);
     padding: 0.5rem;
     border-radius: 6px;
     font-size: 1rem;
@@ -495,14 +595,19 @@ details.bookmark-folder {
 details.bookmark-folder > summary {
     cursor: pointer;
     padding: 0.4rem;
-    color: #cfd3db;
+    color: var(--text-primary);
     display: flex;
     justify-content: space-between;
     align-items: center;
     position: relative;
     list-style: none;
-    border: 2px solid hsla(212, 30%, 30%, 1);
+    border: 2px solid var(--border-bookmark);
     border-radius: 4px;
+    transition: background 0.15s ease;
+}
+
+details.bookmark-folder > summary:hover {
+    background: var(--hover-bg);
 }
 
 details.bookmark-folder > summary::marker,
@@ -541,14 +646,14 @@ details.bookmark-folder[open] > summary .folder-icon {
     align-items: center;
     justify-content: space-between;
     gap: 0.4rem;
-    color: hsl(212, 100%, 65%);
+    color: var(--text-primary);
     text-decoration: none;
     border-radius: 4px;
     transition: background 0.15s ease;
 }
 
 .bookmark-link:hover {
-    background: rgba(74, 158, 255, 0.1);
+    background: var(--hover-bg);
 }
 
 .bookmark-name {
@@ -654,8 +759,8 @@ dock {
     gap: 0.5rem;
     padding: 0.6rem 0.5rem 0.75rem;
     margin-bottom: 0.75rem;
-    background: rgba(0, 0, 0, 0);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--bg-feed-controls);
+    border-bottom: 1px solid var(--border-feed);
     outline: 2px solid hsla(270, 100%, 50%, var(--outline));
 }
 
@@ -668,8 +773,8 @@ overview .feed-controls:first-child {
     flex-direction: column;
     gap: 0.6rem;
     padding: 0.75rem;
-    background: rgba(5, 8, 16, 0.78);
-    border: 1px solid rgba(122, 176, 68, 0.25);
+    background: var(--bg-timer-panel);
+    border: 1px solid hsl(240, 85%, 60%);
     border-radius: 12px;
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
@@ -689,10 +794,10 @@ overview .feed-controls:first-child {
 .timer-label-input {
     flex: 1.5 1 200px;
     padding: 0.55rem 0.75rem;
-    background: rgba(0, 0, 0, 0.5);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--bg-semi);
+    border: 1px solid var(--border-light);
     border-radius: 8px;
-    color: white;
+    color: var(--text-primary);
     font-size: 0.95rem;
 }
 
@@ -706,10 +811,10 @@ overview .feed-controls:first-child {
 .timer-countdown-inputs select {
     width: 100%;
     padding: 0.45rem;
-    background: rgba(0, 0, 0, 0.55);
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: var(--bg-semi-light);
+    border: 1px solid var(--border-input);
     border-radius: 8px;
-    color: #dfe6ff;
+    color: var(--text-secondary);
     font-size: 0.85rem;
 }
 
@@ -720,10 +825,10 @@ overview .feed-controls:first-child {
 .timer-date-input {
     width: 100%;
     padding: 0.5rem 0.65rem;
-    background: rgba(0, 0, 0, 0.55);
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: var(--bg-semi-light);
+    border: 1px solid var(--border-input);
     border-radius: 8px;
-    color: #dfe6ff;
+    color: var(--text-secondary);
 }
 
 .timer-date-input:disabled,
@@ -737,7 +842,7 @@ overview .feed-controls:first-child {
     padding: 0.55rem 1.2rem;
     border-radius: 999px;
     border: 1px solid #7ab044;
-    background: linear-gradient(135deg, rgba(122, 176, 68, 0.8), rgba(122, 176, 68, 0.5));
+    background: var(--background);
     color: #041b08;
     font-weight: 600;
     cursor: pointer;
@@ -755,8 +860,8 @@ overview .feed-controls:first-child {
 }
 
 .timer-list {
-    background: rgba(0, 0, 0, 0.4);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: var(--bg-timer-list);
+    border: 1px solid var(--border-lighter);
     border-radius: 10px;
     padding: 0.5rem;
 }
@@ -776,8 +881,8 @@ overview .feed-controls:first-child {
     padding: 0.6rem;
     margin-bottom: 0.4rem;
     border-radius: 10px;
-    background: rgba(12, 16, 28, 0.85);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: var(--bg-card);
+    border: 1px solid var(--border-lighter);
     position: relative;
     overflow: hidden;
 }
@@ -795,7 +900,7 @@ overview .feed-controls:first-child {
 
 .timer-name {
     font-weight: 600;
-    color: #f1f5ff;
+    color: var(--text-light-blue);
 }
 
 .timer-remaining {
@@ -806,7 +911,7 @@ overview .feed-controls:first-child {
 .timer-progress-fill {
     position: absolute;
     inset: 0;
-    background: linear-gradient(90deg, rgba(122, 176, 68, 0.35), rgba(74, 158, 255, 0.35));
+    background: var(--background);
     opacity: 0.35;
     width: 0%;
     transition: width 0.3s ease;
@@ -827,17 +932,17 @@ overview .feed-controls:first-child {
 .timer-action-btn {
     padding: 0.35rem 0.8rem;
     border-radius: 6px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    background: rgba(255, 255, 255, 0.05);
-    color: #dfe6ff;
+    border: 1px solid var(--border-input);
+    background: hsla(0, 0%, 100%, 0.05);
+    color: var(--text-secondary);
     font-size: 0.85rem;
     cursor: pointer;
     transition: background 0.2s ease, border-color 0.2s ease;
 }
 
 .timer-action-btn:hover {
-    background: rgba(74, 158, 255, 0.2);
-    border-color: rgba(74, 158, 255, 0.4);
+    background: hsla(212, 100%, 65%, 0.2);
+    border-color: hsla(212, 100%, 65%, 0.4);
 }
 
 .timer-row--finishing {
@@ -845,25 +950,25 @@ overview .feed-controls:first-child {
 }
 
 .timer-row--finished {
-    background: rgba(20, 10, 0, 0.75);
+    background: var(--bg-finished);
     border-color: rgba(255, 168, 0, 0.4);
 }
 
 .timer-empty {
     padding: 0.4rem;
-    color: rgba(255, 255, 255, 0.5);
+    color: var(--text-muted);
     font-size: 0.85rem;
 }
 
 @keyframes timerFlash {
     0% {
-        box-shadow: 0 0 5px rgba(122, 176, 68, 0.2);
+        box-shadow: 0 0 5px rgba(68, 106, 176, 0.2);
     }
     50% {
-        box-shadow: 0 0 18px rgba(122, 176, 68, 0.6);
+        box-shadow: 0 0 18px rgba(68, 115, 176, 0.6);
     }
     100% {
-        box-shadow: 0 0 5px rgba(122, 176, 68, 0.2);
+        box-shadow: 0 0 5px rgba(68, 104, 176, 0.2);
     }
 }
 
@@ -877,17 +982,17 @@ overview .feed-controls:first-child {
 
 .view-toggle-chip {
     padding: 0.35rem 0.9rem;
-    background: var(--linear-gradient);
-    border: 1px solid hsl(0, 0%, 20%);
+    background: var(--background);
+    border: 1px solid hsl(0, 0%, 0%);
     border-radius: 999px;
-    color: white;
+    color: var(--text-primary);
     font-size: 0.9rem;
     cursor: pointer;
     font-weight: 600;
     box-shadow: none;
     transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
 }
 
 .view-toggle-chip:hover {
@@ -895,14 +1000,14 @@ overview .feed-controls:first-child {
 }
 
 .view-toggle-chip.is-active {
-    border-color: hsla(150, 100%, 38%, 0.5);
-    background: linear-gradient(hsla(150, 100%, 50%, 0.25) 10%, hsla(150, 100%, 50%, 0.15) 45%, hsla(150, 100%, 20%, .1) 55%, hsla(150, 100%, 21%, .3) 90%);
+    border-color: hsla(240, 100%, 38%, 0.5);
+    background: var(--background);
 }
 
 .timer-toggle-btn {
     padding: 0.35rem 0.9rem;
-    background: rgba(6, 8, 15, 0.55);
-    border: 1px solid #2d2d2d;
+    background: var(--bg-folder-btn);
+    border: 1px solid hsl(0, 0%, 0%);
     border-radius: 999px;
     color: #d5d5d5;
     font-size: 0.9rem;
@@ -912,20 +1017,20 @@ overview .feed-controls:first-child {
 
 .timer-toggle-btn.active {
     background: rgba(122, 176, 68, 0.12);
-    color: #7ab044;
-    border-color: #7ab044;
+    color: #4449b0;
+    border-color: #4944b0;
     box-shadow: 0 0 8px rgba(122, 176, 68, 0.25);
 }
 
 .timer-toggle-btn:hover {
-    border-color: #7ab044;
-    color: white;
+    border-color: #444bb0;
+    color: var(--text-primary);
 }
 
 .folder-btn {
     padding: 0.35rem 0.9rem;
-    background: rgba(6, 8, 15, 0.55);
-    border: 1px solid #2d2d2d;
+    background: var(--bg-folder-btn);
+    border: 1px solid #000000;
     border-radius: 999px;
     color: #d5d5d5;
     font-size: 0.9rem;
@@ -936,23 +1041,23 @@ overview .feed-controls:first-child {
 }
 
 .folder-btn:hover {
-    border-color: hsl(212, 100%, 65%);
-    color: #ffffff;
-    background: rgba(74, 158, 255, 0.15);
+    border-color: hsl(230, 100%, 65%);
+    color: var(--text-primary);
+    background: var(--hover-bg);
 }
 
 .folder-btn.active {
-    background: linear-gradient(hsla(212, 100%, 50%, 0.25) 10%, hsla(212, 100%, 50%, 0.15) 45%, hsla(212, 100%, 20%, .1) 55%, hsla(212, 100%, 21%, .3) 90%);
-    color: hsl(212, 100%, 65%);
-    border-color: hsl(212, 100%, 65%);
+    background: var(--background);
+    color: hsl(230, 100%, 65%);
+    border-color: hsl(230, 100%, 65%);
     font-weight: 600;
     box-shadow: 0 0 8px rgba(74, 158, 255, 0.25);
 }
 
 .feed-load-more {
     padding: 0.6rem 1.5rem;
-    background: #131313;
-    border: 1px solid #4a9eff;
+    background: var(--bg-load-more);
+    border: 2px solid hsl(230, 70%, 50%);
     border-radius: 999px;
     color: #4a9eff;
     font-size: 0.9rem;
@@ -962,8 +1067,8 @@ overview .feed-controls:first-child {
 }
 
 .feed-load-more:hover:not(:disabled) {
-    background: #4a9eff;
-    color: #041024;
+    background: transparent;
+    color: hsl(210, 100%, 50%);
     box-shadow: 0 0 12px rgba(74, 158, 255, 0.3);
 }
 
@@ -973,18 +1078,18 @@ overview .feed-controls:first-child {
 }
 
 .feed-item {
-    background: var(--linear-gradient);
-    border: 1px solid rgba(74, 158, 255, 0.35);
+    background: var(--background);
+    border: 2px solid hsla(230, 70%, 50%, 0.8);
     border-radius: 16px;
     padding: 1rem;
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 5px 10px rgba(0, 0, 0, 0.35);
     transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .feed-item:hover {
     border-color: #4a9eff;
     transform: translateY(-2px);
-    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
 }
 
 .feed-item--read {
@@ -1042,8 +1147,8 @@ overview .feed-controls:first-child {
 }
 
 .feed-folder-pill {
-    background: rgba(255, 215, 0, 0.18);
-    color: #ffd700;
+    background: rgba(0, 17, 255, 0.18);
+    color: #1500ff;
     padding: 0.15rem 0.6rem;
     border-radius: 999px;
     font-size: 0.8rem;
@@ -1066,7 +1171,7 @@ overview .feed-controls:first-child {
 
 .feed-excerpt {
     margin-top: 0.5rem;
-    color: #c7c7c7;
+    color: var(--text-gray);
     font-size: 0.95rem;
     line-height: 1.6;
 }
@@ -1149,7 +1254,7 @@ dock::-webkit-scrollbar,
 /* Input focus states */
 input:focus {
     outline: none;
-    color: white;
+    color: var(--text-primary);
 }
 
 /* Link styles */
@@ -1174,8 +1279,8 @@ img {
 
 /* Wikipedia content styles */
 .infobox {
-    background: #1a1a1a;
-    border: 1px solid #444;
+    background: var(--infobox-bg);
+    border: 1px solid var(--border-primary);
 }
 
 .infobox img {
@@ -1183,8 +1288,8 @@ img {
 }
 
 #toc {
-    background: #1a1a1a;
-    border: 1px solid #444;
+    background: var(--infobox-bg);
+    border: 1px solid var(--border-primary);
     padding: 0.5rem;
 }
 
@@ -1245,18 +1350,19 @@ search-container {
     align-items: center;
     justify-content: center;
     text-decoration: none;
-    color: white;
-    transition: transform 0.2s ease, background 0.15s ease;
+    color: var(--text-primary);
+    transition: var(--hover-transition);
     flex-shrink: 0;
     width: 80px;
     min-height: 0;
     padding: 0.5rem;
     border-radius: 8px;
+    background: transparent;
 }
 
 .app-icon-item:hover {
-    transform: scale(1.05);
-    background: rgba(74, 158, 255, 0.1);
+    background: var(--hover-bg);
+    transform: scale(var(--hover-scale));
 }
 
 .app-icon-image {
@@ -1265,7 +1371,6 @@ search-container {
     object-fit: contain;
     border-radius: 0px;
     margin-bottom: 0.25rem;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     transition: box-shadow 0.2s ease;
     flex-shrink: 0;
 }
@@ -1276,10 +1381,6 @@ search-container {
         height: 40px;
         margin-bottom: 0.2rem;
     }
-}
-
-.app-icon-item:hover .app-icon-image {
-    box-shadow: 0 6px 20px rgba(74, 158, 255, 0.4);
 }
 
 .app-icon-title {
@@ -1334,7 +1435,7 @@ text h3,
 text h4 {
     margin-top: 1.5rem;
     margin-bottom: 0.75rem;
-    color: #fff;
+    color: var(--text-primary);
 }
 
 text ul,
@@ -1400,7 +1501,7 @@ overview img {
 }
 
 .bookmark-link.nav-highlight .bookmark-name {
-    color: #fff !important;
+    color: var(--text-primary) !important;
     font-weight: 600;
 }
 
