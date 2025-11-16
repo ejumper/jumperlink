@@ -38,7 +38,9 @@ const CONFIG = {
 
 const LOCAL_STORAGE_KEYS = {
     readItems: 'jumperlink_read_items',
-    readSyncQueue: 'jumperlink_read_sync_queue'
+    readSyncQueue: 'jumperlink_read_sync_queue',
+    timerMetadata: 'jumperlink_timer_metadata',
+    localIntervalTimers: 'jumperlink_local_interval_timers'
 };
 
 const FALLBACK_FAVICON = 'icons/web.webp';
@@ -46,6 +48,23 @@ const FALLBACK_FAVICON = 'icons/web.webp';
 // ============================================================================
 // STATE MANAGEMENT
 // ============================================================================
+
+function createTimerDraft() {
+    return {
+        label: '',
+        repeat: false,
+        durationMenuOpen: false,
+        dateMenuOpen: false,
+        intervals: [],
+        targetDate: '',
+        countdown: {
+            days: '',
+            hours: '',
+            minutes: '',
+            seconds: ''
+        }
+    };
+}
 
 const STATE = {
     mode: 'home', // 'home' or 'search'
@@ -73,6 +92,13 @@ const STATE = {
     finishedTimers: new Set(),
     timerAudioMap: new Map(),
     timerError: false,
+    timerActiveTab: 'active',
+    timerDraft: createTimerDraft(),
+    timerMetadata: new Map(),
+    openIntervalDetails: new Set(),
+    autoRepeatQueue: new Set(),
+    localIntervalTimers: [],
+    localIntervalRuntimeMap: new Map(),
     feedOffset: 0, // Pagination offset for feed items
     feedHasMore: true, // Whether more items are available to load
     feedLoading: false, // Loading state for load more button
@@ -82,6 +108,470 @@ const STATE = {
     navigationIndex: -1, // Current index in the navigable items
     navigationItems: [] // Current list of navigable items
 };
+
+function normalizeTimerMetadataEntry(entry) {
+    if (!entry || typeof entry !== 'object') {
+        return { repeat: false, intervals: [] };
+    }
+    const normalized = {
+        repeat: Boolean(entry.repeat),
+        intervals: Array.isArray(entry.intervals)
+            ? entry.intervals
+                .map((interval, index) => ({
+                    id: interval.id || `interval-${index}-${Date.now()}`,
+                    label: interval.label || `Interval ${index + 1}`,
+                    durationMs: Math.max(0, Number(interval.durationMs) || 0),
+                    colorIndex: Number.isFinite(interval.colorIndex) ? Number(interval.colorIndex) : index
+                }))
+                .filter(interval => interval.durationMs > 0)
+            : []
+    };
+    return normalized;
+}
+
+function loadTimerMetadata() {
+    try {
+        const raw = localStorage.getItem(LOCAL_STORAGE_KEYS.timerMetadata);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+            STATE.timerMetadata = new Map(
+                Object.entries(parsed).map(([key, value]) => [key, normalizeTimerMetadataEntry(value)])
+            );
+        }
+    } catch (error) {
+        console.warn('Unable to load timer metadata', error);
+        STATE.timerMetadata = new Map();
+    }
+}
+
+function persistTimerMetadata() {
+    try {
+        const plain = {};
+        STATE.timerMetadata.forEach((value, key) => {
+            plain[key] = value;
+        });
+        localStorage.setItem(LOCAL_STORAGE_KEYS.timerMetadata, JSON.stringify(plain));
+    } catch (error) {
+        console.warn('Unable to persist timer metadata', error);
+    }
+}
+
+function getTimerMetadata(timerId) {
+    if (!timerId) return null;
+    return STATE.timerMetadata.get(timerId) || null;
+}
+
+function setTimerMetadata(timerId, metadata) {
+    if (!timerId) return;
+    const toStore = normalizeTimerMetadataEntry(metadata);
+    const hasData = toStore.repeat || (toStore.intervals && toStore.intervals.length > 0);
+    if (!hasData) {
+        deleteTimerMetadata(timerId);
+        return;
+    }
+    STATE.timerMetadata.set(timerId, toStore);
+    persistTimerMetadata();
+}
+
+function deleteTimerMetadata(timerId) {
+    if (!timerId) return;
+    if (STATE.timerMetadata.delete(timerId)) {
+        persistTimerMetadata();
+    }
+    STATE.autoRepeatQueue.delete(timerId);
+}
+
+function updateTimerDraft(partial = {}) {
+    STATE.timerDraft = { ...STATE.timerDraft, ...partial };
+    requestTimerDraftUIUpdate();
+}
+
+function resetTimerDraft() {
+    STATE.timerDraft = createTimerDraft();
+    requestTimerDraftUIUpdate(true);
+}
+
+let timerDraftUiRaf = null;
+function requestTimerDraftUIUpdate(resetForm = false) {
+    if (timerDraftUiRaf) {
+        cancelAnimationFrame(timerDraftUiRaf);
+    }
+    timerDraftUiRaf = requestAnimationFrame(() => {
+        timerDraftUiRaf = null;
+        applyTimerDraftToForm(resetForm);
+    });
+}
+
+function applyTimerDraftToForm(resetForm = false) {
+    const form = document.querySelector('.timer-add-form');
+    if (!form) return;
+    const draft = STATE.timerDraft || createTimerDraft();
+
+    const labelInput = form.querySelector('.timer-label-input');
+    if (labelInput && (resetForm || document.activeElement !== labelInput)) {
+        labelInput.value = draft.label || '';
+    }
+
+    const durationMenu = form.querySelector('.timer-duration-menu');
+    const durationButton = form.querySelector('[data-timer-duration-toggle]');
+    durationMenu?.classList.toggle('is-open', Boolean(draft.durationMenuOpen));
+    durationButton?.classList.toggle('is-active', Boolean(draft.durationMenuOpen));
+
+    const dateMenu = form.querySelector('.timer-date-menu');
+    const dateButton = form.querySelector('[data-timer-date-toggle]');
+    dateMenu?.classList.toggle('is-open', Boolean(draft.dateMenuOpen));
+    dateButton?.classList.toggle('is-active', Boolean(draft.dateMenuOpen));
+
+    const repeatButton = form.querySelector('[data-timer-repeat-toggle]');
+    repeatButton?.classList.toggle('is-active', Boolean(draft.repeat));
+    if (repeatButton) {
+        repeatButton.setAttribute('aria-pressed', draft.repeat ? 'true' : 'false');
+    }
+
+    const dateInput = form.querySelector('.timer-date-input');
+    if (dateInput && (resetForm || document.activeElement !== dateInput)) {
+        dateInput.value = draft.targetDate || '';
+    }
+
+    const countdownInputs = form.querySelectorAll('.timer-count-field');
+    countdownInputs.forEach(select => {
+        const unit = select.dataset.unit;
+        if (!unit) return;
+        const value = draft.countdown?.[unit] ?? '';
+        if (resetForm || document.activeElement !== select) {
+            select.value = value;
+        }
+    });
+
+    const collection = form.querySelector('.timer-interval-collection');
+    if (collection) {
+        collection.innerHTML = renderIntervalDraftList(draft);
+    }
+}
+
+function generateIntervalId() {
+    return `interval-${Math.random().toString(36).slice(2, 8)}-${Date.now().toString(36)}`;
+}
+
+function appendDraftInterval(durationMs) {
+    if (durationMs <= 0) return false;
+    const intervals = Array.isArray(STATE.timerDraft?.intervals) ? [...STATE.timerDraft.intervals] : [];
+    intervals.push({
+        id: generateIntervalId(),
+        label: `Interval ${intervals.length + 1}`,
+        durationMs,
+        colorIndex: intervals.length
+    });
+    updateTimerDraft({ intervals });
+    return true;
+}
+
+function removeDraftInterval(intervalId) {
+    if (!intervalId) return;
+    const intervals = (STATE.timerDraft?.intervals || []).filter(interval => interval.id !== intervalId);
+    updateTimerDraft({ intervals });
+}
+
+function renameDraftInterval(intervalId, value) {
+    if (!intervalId) return;
+    const intervals = (STATE.timerDraft?.intervals || []).map(interval =>
+        interval.id === intervalId ? { ...interval, label: value } : interval
+    );
+    updateTimerDraft({ intervals });
+}
+
+function renameTimerInterval(timerId, intervalId, value) {
+    if (!timerId || !intervalId) return;
+    const meta = getTimerMetadata(timerId);
+    if (!meta) return;
+    const intervals = Array.isArray(meta.intervals)
+        ? meta.intervals.map(interval =>
+            interval.id === intervalId ? { ...interval, label: value } : interval
+        )
+        : [];
+    setTimerMetadata(timerId, { ...meta, intervals });
+
+    const localTimer = findLocalIntervalTimer(timerId);
+    if (localTimer && Array.isArray(localTimer.intervals)) {
+        localTimer.intervals = localTimer.intervals.map(interval =>
+            interval.id === intervalId ? { ...interval, label: value } : interval
+        );
+        persistLocalIntervalTimers();
+    }
+
+    const row = document.querySelector(`.timer-row[data-timer-id="${timerId}"]`);
+    if (row) {
+        const inputs = row.querySelectorAll(`[data-interval-meta-field="label"][data-interval-id="${intervalId}"]`);
+        inputs.forEach(input => {
+            if (document.activeElement !== input) {
+                input.value = value;
+            }
+        });
+        const timer = STATE.timers.find(entry => entry.id === timerId);
+        if (timer) {
+            const intervalState = computeIntervalState(timer, Date.now());
+            if (intervalState.currentInterval && intervalState.currentInterval.id === intervalId) {
+                const pill = row.querySelector('.timer-interval-name-pill');
+                if (pill) {
+                    pill.textContent = value;
+                }
+            }
+        }
+    }
+}
+
+function normalizeLocalInterval(interval, index) {
+    if (!interval) {
+        return {
+            id: `segment-${index}`,
+            label: `Interval ${index + 1}`,
+            durationMs: 0,
+            colorIndex: index
+        };
+    }
+    return {
+        id: interval.id || `segment-${index}`,
+        label: interval.label || `Interval ${index + 1}`,
+        durationMs: Math.max(0, Number(interval.durationMs) || 0),
+        colorIndex: Number.isFinite(interval.colorIndex) ? interval.colorIndex : index
+    };
+}
+
+function loadLocalIntervalTimers() {
+    try {
+        const raw = localStorage.getItem(LOCAL_STORAGE_KEYS.localIntervalTimers);
+        if (!raw) {
+            STATE.localIntervalTimers = [];
+            return;
+        }
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) {
+            STATE.localIntervalTimers = [];
+            return;
+        }
+
+        STATE.localIntervalTimers = parsed.map(timer => {
+            const intervals = Array.isArray(timer.intervals)
+                ? timer.intervals.map(normalizeLocalInterval)
+                : [];
+            const totalDuration = Math.max(
+                Number(timer.durationMs) || intervals.reduce((sum, entry) => sum + entry.durationMs, 0),
+                0
+            );
+            const elapsedMs = Math.min(Math.max(Number(timer.elapsedMs) || 0, 0), totalDuration);
+            const normalized = {
+                id: timer.id || generateLocalIntervalTimerId(),
+                label: timer.label || 'Untitled timer',
+                intervals,
+                durationMs: totalDuration,
+                elapsedMs,
+                state: timer.state || (totalDuration > 0 ? 'paused' : 'idle'),
+                createdAt: timer.createdAt || Date.now(),
+                updatedAt: timer.updatedAt || Date.now(),
+                mode: timer.mode || (totalDuration > 0 ? 'interval' : 'checklist'),
+                startedAt: timer.startedAt || null,
+                source: 'local',
+                runtimeIntervalIndex: timer.runtimeIntervalIndex || 0
+            };
+            setTimerMetadata(normalized.id, {
+                repeat: false,
+                intervals: normalized.intervals
+            });
+            return normalized;
+        });
+        STATE.localIntervalRuntimeMap = new Map();
+    } catch (error) {
+        console.warn('Unable to load local interval timers', error);
+        STATE.localIntervalTimers = [];
+    }
+}
+
+function persistLocalIntervalTimers() {
+    try {
+        localStorage.setItem(
+            LOCAL_STORAGE_KEYS.localIntervalTimers,
+            JSON.stringify(STATE.localIntervalTimers)
+        );
+    } catch (error) {
+        console.warn('Unable to persist local interval timers', error);
+    }
+}
+
+function generateLocalIntervalTimerId() {
+    return `local-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function createLocalIntervalTimer(config) {
+    const { label, intervals = [] } = config;
+    const normalizedIntervals = intervals.map((interval, index) =>
+        normalizeLocalInterval(interval, index)
+    );
+    const totalDuration = normalizedIntervals.reduce(
+        (sum, interval) => sum + interval.durationMs,
+        0
+    );
+    const timer = {
+        id: generateLocalIntervalTimerId(),
+        label: label || 'Timer',
+        intervals: normalizedIntervals,
+        durationMs: totalDuration,
+        elapsedMs: 0,
+        state: totalDuration > 0 ? 'paused' : 'idle',
+        mode: totalDuration > 0 ? 'interval' : 'checklist',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        startedAt: null,
+        source: 'local',
+        runtimeIntervalIndex: 0
+    };
+    STATE.localIntervalTimers.push(timer);
+    setTimerMetadata(timer.id, {
+        repeat: false,
+        intervals: normalizedIntervals
+    });
+    persistLocalIntervalTimers();
+    renderTimerLists();
+}
+
+function findLocalIntervalTimer(timerId) {
+    if (!timerId) return null;
+    return STATE.localIntervalTimers.find(timer => timer.id === timerId) || null;
+}
+
+function setLocalIntervalTimerState(timerId, state) {
+    const timer = findLocalIntervalTimer(timerId);
+    if (!timer) return;
+    timer.state = state;
+    if (state === 'finished' && timer.mode === 'interval') {
+        timer.elapsedMs = timer.durationMs;
+        if (STATE.localIntervalRuntimeMap.has(timerId)) {
+            const runtime = STATE.localIntervalRuntimeMap.get(timerId);
+            runtime?.stop?.();
+            STATE.localIntervalRuntimeMap.delete(timerId);
+        }
+    }
+    if (state === 'idle' && timer.mode !== 'interval') {
+        timer.elapsedMs = 0;
+    }
+    timer.updatedAt = Date.now();
+    persistLocalIntervalTimers();
+    renderTimerLists();
+}
+
+function deleteLocalIntervalTimer(timerId) {
+    if (!timerId) return;
+    const runtime = STATE.localIntervalRuntimeMap.get(timerId);
+    if (runtime) {
+        runtime.stop();
+        STATE.localIntervalRuntimeMap.delete(timerId);
+    }
+    const nextTimers = STATE.localIntervalTimers.filter(timer => timer.id !== timerId);
+    if (nextTimers.length === STATE.localIntervalTimers.length) return;
+    STATE.localIntervalTimers = nextTimers;
+    deleteTimerMetadata(timerId);
+    persistLocalIntervalTimers();
+    renderTimerLists();
+}
+
+function updateLocalIntervalTimerElapsed(timerId, milliseconds, { persist = false } = {}) {
+    const timer = findLocalIntervalTimer(timerId);
+    if (!timer) return null;
+    timer.elapsedMs = Math.min(Math.max(milliseconds, 0), timer.durationMs);
+    timer.updatedAt = Date.now();
+    if (persist) {
+        persistLocalIntervalTimers();
+    }
+    return timer;
+}
+
+function startLocalIntervalTimer(timerId) {
+    const timer = findLocalIntervalTimer(timerId);
+    if (!timer || timer.mode === 'checklist') return;
+    if (timer.state === 'running') return;
+    const timerLib = window.IntervalTimerLib?.Timer;
+    if (!timerLib) {
+        console.warn('Interval timer library missing');
+        return;
+    }
+    let runtime = STATE.localIntervalRuntimeMap.get(timerId);
+    if (!runtime) {
+        runtime = new timerLib({
+            startTime: timer.elapsedMs,
+            endTime: timer.durationMs,
+            updateFrequency: 100,
+            selfAdjust: true
+        });
+        runtime.addEventListener('update', event => {
+            const instance = event.detail || runtime;
+            const ms = instance.getTime?.millisecondsTotal ?? timer.elapsedMs;
+            updateLocalIntervalTimerElapsed(timerId, ms);
+            timer.elapsedMs = ms;
+            const stateSnapshot = computeIntervalState(
+                { ...timer, elapsedMs: ms, source: 'local' },
+                Date.now()
+            );
+            if (typeof timer.runtimeIntervalIndex !== 'number') {
+                timer.runtimeIntervalIndex = stateSnapshot.currentIndex;
+            } else if (stateSnapshot.currentIndex > timer.runtimeIntervalIndex) {
+                playTimerSoundOnce();
+                timer.runtimeIntervalIndex = stateSnapshot.currentIndex;
+            }
+            requestAnimationFrame(updateTimerCountdowns);
+        });
+        runtime.addEventListener('end', () => {
+            updateLocalIntervalTimerElapsed(timerId, timer.durationMs, { persist: true });
+            playTimerSoundOnce();
+            setLocalIntervalTimerState(timerId, 'finished');
+            STATE.localIntervalRuntimeMap.delete(timerId);
+        });
+        STATE.localIntervalRuntimeMap.set(timerId, runtime);
+    }
+    const initialState = computeIntervalState(
+        { ...timer, source: 'local' },
+        Date.now()
+    );
+    timer.runtimeIntervalIndex = initialState.currentIndex;
+    runtime.start({
+        startTime: timer.elapsedMs,
+        endTime: timer.durationMs
+    });
+    timer.state = 'running';
+    timer.startedAt = new Date().toISOString();
+    timer.updatedAt = Date.now();
+    persistLocalIntervalTimers();
+    renderTimerLists();
+}
+
+function pauseLocalIntervalTimer(timerId) {
+    const timer = findLocalIntervalTimer(timerId);
+    if (!timer || timer.mode === 'checklist') return;
+    const runtime = STATE.localIntervalRuntimeMap.get(timerId);
+    if (!runtime) return;
+    runtime.pause();
+    const ms = runtime.getTime?.millisecondsTotal ?? timer.elapsedMs;
+    updateLocalIntervalTimerElapsed(timerId, ms, { persist: true });
+    timer.state = 'paused';
+    timer.updatedAt = Date.now();
+    renderTimerLists();
+}
+
+function resetLocalIntervalTimer(timerId) {
+    const timer = findLocalIntervalTimer(timerId);
+    if (!timer || timer.mode === 'checklist') return;
+    const runtime = STATE.localIntervalRuntimeMap.get(timerId);
+    if (runtime) {
+        runtime.stop();
+        STATE.localIntervalRuntimeMap.delete(timerId);
+    }
+    timer.elapsedMs = 0;
+    timer.state = 'paused';
+    timer.startedAt = null;
+    timer.updatedAt = Date.now();
+    timer.runtimeIntervalIndex = 0;
+    persistLocalIntervalTimers();
+    renderTimerLists();
+}
 
 // ============================================================================
 // DOM REFERENCES
@@ -114,6 +604,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log('[Jumperlink] Dashboard initializing...');
 
     initializeLocalReadTracking();
+    loadTimerMetadata();
+    loadLocalIntervalTimers();
     initTaskModal();
 
     // Load initial data
@@ -187,6 +679,15 @@ function setupKeyboardNavigation() {
     console.log('[Navigation] Keyboard shortcuts enabled');
 }
 
+function isEditableElement(element) {
+    if (!element) return false;
+    const tag = element.tagName;
+    return tag === 'INPUT'
+        || tag === 'TEXTAREA'
+        || tag === 'SELECT'
+        || element.isContentEditable;
+}
+
 function handleGlobalKeydown(e) {
     // Ignore if modifier keys are pressed (except Shift for some shortcuts)
     if (e.ctrlKey || e.metaKey || e.altKey) {
@@ -194,11 +695,12 @@ function handleGlobalKeydown(e) {
     }
 
     // Check if user is typing in an input field
-    const isInputFocused = document.activeElement && (
-        document.activeElement.tagName === 'INPUT' ||
-        document.activeElement.tagName === 'TEXTAREA' ||
-        document.activeElement.isContentEditable
-    );
+    const activeElement = document.activeElement || null;
+    const isInputFocused = isEditableElement(activeElement);
+    const isTargetInput = isEditableElement(e.target);
+    const searchInput = DOM.searchInput;
+    const activeIsSearch = Boolean(searchInput && activeElement === searchInput);
+    const targetIsSearch = Boolean(searchInput && e.target === searchInput);
 
     // Handle Escape key (works even in input fields)
     if (e.key === 'Escape') {
@@ -234,7 +736,7 @@ function handleGlobalKeydown(e) {
 
     // Special handling for arrow down in search input when not in navigation mode
     // This allows starting navigation from the search input
-    if (isInputFocused && document.activeElement === DOM.searchInput) {
+    if (activeIsSearch) {
         if (e.key === 'ArrowDown' && STATE.currentSuggestions.length > 0 && !STATE.navigationMode) {
             e.preventDefault();
             enterSearchNavigationMode();
@@ -242,8 +744,10 @@ function handleGlobalKeydown(e) {
         }
     }
 
-    // Don't process shortcuts if typing in input (except when in search input for arrow navigation)
-    if (isInputFocused && document.activeElement !== DOM.searchInput) {
+    // Don't process shortcuts if typing in inputs (based on focus or event target),
+    // except when interacting with the search input
+    const isTypingOutsideSearch = (isInputFocused && !activeIsSearch) || (isTargetInput && !targetIsSearch);
+    if (isTypingOutsideSearch) {
         return;
     }
 
@@ -477,7 +981,7 @@ function updateClock() {
     const timeString = now.toLocaleTimeString('en-US', {
         hour: '2-digit',
         minute: '2-digit',
-        
+
         hour12: false
     });
 
@@ -499,6 +1003,39 @@ function updateClock() {
     if (DOM.subtitle) {
         DOM.subtitle.innerHTML = `<p><a href="https://cloud.jumperlink.net/apps/calendar/timeGridWeek/now" target="_blank">${dateString}</a></p>`;
     }
+
+    // Update time-based background in dark mode
+    updateTimeBasedBackground(now);
+}
+
+function updateTimeBasedBackground(now) {
+    // Only apply in dark mode
+    const isDarkMode = !window.matchMedia('(prefers-color-scheme: light)').matches;
+    if (!isDarkMode) return;
+
+    const hour = now.getHours();
+    let backgroundImage = '';
+
+    // Determine background based on time of day
+    if (hour >= 20 || hour < 5) {
+        // 20:00 to 05:00 - Night
+        backgroundImage = 'backgrounds/night.jpg';
+    } else if (hour >= 5 && hour < 8) {
+        // 05:00 to 08:00 - Sunrise
+        backgroundImage = 'backgrounds/dawn.jpeg';
+    } else if (hour >= 8 && hour < 18) {
+        // 08:00 to 18:00 - Day
+        backgroundImage = 'backgrounds/day.jpeg';
+    } else {
+        // 18:00 to 20:00 - Sunset
+        backgroundImage = 'backgrounds/dawn.jpeg';
+    }
+
+    // Apply background to body
+    document.body.style.backgroundImage = `url('${backgroundImage}')`;
+    document.body.style.backgroundSize = 'cover';
+    document.body.style.backgroundPosition = 'center';
+    document.body.style.backgroundAttachment = 'fixed';
 }
 
 function ensureClockToggle() {
@@ -604,6 +1141,10 @@ function handleTimerBoardResponse(board, initial = false) {
                 if (!STATE.finishedTimers.has(timer.id) && !STATE.finishingTimers.has(timer.id) && prevState !== 'finished') {
                     triggerTimerCompletion(timer);
                 }
+                const metadata = getTimerMetadata(timer.id);
+                if (metadata?.repeat) {
+                    queueTimerAutoRepeat(timer);
+                }
             } else {
                 STATE.finishedTimers.delete(timer.id);
                 STATE.finishingTimers.delete(timer.id);
@@ -616,6 +1157,7 @@ function handleTimerBoardResponse(board, initial = false) {
                 STATE.finishedTimers.delete(timer.id);
                 STATE.finishingTimers.delete(timer.id);
                 stopTimerAudio(timer.id);
+                deleteTimerMetadata(timer.id);
             }
         });
     }
@@ -659,6 +1201,15 @@ function stopTimerAudio(timerId) {
     }
 }
 
+function playTimerSoundOnce() {
+    try {
+        const audio = new Audio('sounds/ringtone.m4a');
+        audio.play().catch(() => {});
+    } catch (error) {
+        console.warn('Unable to play timer sound:', error);
+    }
+}
+
 function startTimerTicker() {
     if (STATE.timerTickIntervalId) {
         clearInterval(STATE.timerTickIntervalId);
@@ -667,7 +1218,9 @@ function startTimerTicker() {
 }
 
 function updateTimerCountdowns() {
-    if (!STATE.timerBoardLoaded) return;
+    if (!STATE.timerBoardLoaded && (!STATE.localIntervalTimers || !STATE.localIntervalTimers.length)) {
+        return;
+    }
     const now = Date.now();
     STATE.timers.forEach(timer => {
         const row = document.querySelector(`.timer-row[data-timer-id="${timer.id}"]`);
@@ -675,16 +1228,71 @@ function updateTimerCountdowns() {
 
         const remainingEl = row.querySelector('.timer-remaining');
         const progressEl = row.querySelector('.timer-progress-fill');
-        const remaining = remainingMs(timer, now);
+        const intervalState = computeIntervalState(timer, now);
+        const remaining = intervalState.intervalRemaining ?? remainingMs(timer, now);
+        const percent = intervalState.progressPercent ?? (
+            timer.durationMs > 0
+                ? Math.min(100, ((timer.durationMs - remainingMs(timer, now)) / timer.durationMs) * 100)
+                : 100
+        );
 
         if (remainingEl) {
             remainingEl.textContent = formatRemaining(remaining);
         }
         if (progressEl) {
-            const percent = timer.durationMs > 0
+            const scale = Math.min(Math.max(percent, 0), 100) / 100;
+            progressEl.style.transform = `scaleX(${scale})`;
+            if (intervalState.gradient) {
+                progressEl.style.backgroundImage = intervalState.gradient;
+            }
+        }
+        if (intervalState.hasMultiple) {
+            const pill = row.querySelector('.timer-interval-name-pill');
+            if (pill && intervalState.currentInterval) {
+                pill.textContent = intervalState.currentInterval.label;
+            }
+            const total = row.querySelector('.timer-total-length');
+            if (total) {
+                total.textContent = `Total ${formatDuration(intervalState.totalDuration)}`;
+            }
+        }
+    });
+
+    (STATE.localIntervalTimers || []).forEach(timer => {
+        if (timer.mode !== 'interval') return;
+        const row = document.querySelector(`.timer-row[data-timer-id="${timer.id}"]`);
+        if (!row) return;
+        const remainingEl = row.querySelector('.timer-remaining');
+        const progressEl = row.querySelector('.timer-progress-fill');
+        const intervalState = computeIntervalState({ ...timer, source: 'local' }, now);
+        const remaining =
+            intervalState.intervalRemaining ??
+            Math.max(0, timer.durationMs - (timer.elapsedMs || 0));
+        const percent = intervalState.progressPercent ?? (
+            timer.durationMs > 0
                 ? Math.min(100, ((timer.durationMs - remaining) / timer.durationMs) * 100)
-                : 100;
-            progressEl.style.width = `${percent}%`;
+                : 100
+        );
+
+        if (remainingEl) {
+            remainingEl.textContent = formatRemaining(remaining);
+        }
+        if (progressEl) {
+            const scale = Math.min(Math.max(percent, 0), 100) / 100;
+            progressEl.style.transform = `scaleX(${scale})`;
+            if (intervalState.gradient) {
+                progressEl.style.backgroundImage = intervalState.gradient;
+            }
+        }
+        if (intervalState.hasMultiple) {
+            const pill = row.querySelector('.timer-interval-name-pill');
+            if (pill && intervalState.currentInterval) {
+                pill.textContent = intervalState.currentInterval.label;
+            }
+            const total = row.querySelector('.timer-total-length');
+            if (total) {
+                total.textContent = `Total ${formatDuration(intervalState.totalDuration)}`;
+            }
         }
     });
 }
@@ -707,6 +1315,19 @@ function renderTimerLists() {
     const finishedTimers = STATE.timers
         .filter(timer => timer.state === 'finished' && !finishingIds.has(timer.id))
         .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+    const localTimers = Array.isArray(STATE.localIntervalTimers) ? STATE.localIntervalTimers : [];
+    const localIntervalActive = localTimers
+        .filter(timer => timer.mode === 'interval' && timer.state !== 'finished')
+        .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+    const localIntervalFinished = localTimers
+        .filter(timer => timer.mode === 'interval' && timer.state === 'finished')
+        .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    const localChecklistActive = localTimers
+        .filter(timer => timer.mode !== 'interval' && timer.state !== 'finished')
+        .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+    const localChecklistFinished = localTimers
+        .filter(timer => timer.mode !== 'interval' && timer.state === 'finished')
+        .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 
     const errorMessage = STATE.timerError
         ? '<div class="timer-empty timer-error">Unable to reach timer service</div>'
@@ -715,84 +1336,251 @@ function renderTimerLists() {
         ? '<div class="timer-empty">Loading timers…</div>'
         : null;
 
+    const activeSegments = [];
+    if (activeTimers.length) {
+        activeSegments.push(
+            activeTimers.map(timer => renderTimerRow(timer, now, finishingIds.has(timer.id))).join('')
+        );
+    }
+    if (localIntervalActive.length) {
+        activeSegments.push(
+            localIntervalActive
+                .map(timer => renderTimerRow({ ...timer, source: 'local' }, now, false))
+                .join('')
+        );
+    }
+    if (localChecklistActive.length) {
+        activeSegments.unshift(localChecklistActive.map(timer => renderLocalIntervalTimerRow(timer, false)).join(''));
+    }
     activeContainer.innerHTML = errorMessage
-        || (activeTimers.length
-            ? activeTimers.map(timer => renderTimerRow(timer, now, finishingIds.has(timer.id))).join('')
+        || (activeSegments.length
+            ? activeSegments.join('')
             : (loadingMessage || '<div class="timer-empty">No active timers</div>'));
 
+    const finishedSegments = [];
+    if (finishedTimers.length) {
+        finishedSegments.push(finishedTimers.map(timer => renderFinishedTimerRow(timer)).join(''));
+    }
+    if (localIntervalFinished.length) {
+        finishedSegments.push(
+            localIntervalFinished
+                .map(timer => renderFinishedTimerRow({ ...timer, source: 'local' }))
+                .join('')
+        );
+    }
+    if (localChecklistFinished.length) {
+        finishedSegments.push(localChecklistFinished.map(timer => renderLocalIntervalTimerRow(timer, true)).join(''));
+    }
     finishedContainer.innerHTML = errorMessage
-        || (finishedTimers.length
-            ? finishedTimers.map(timer => renderFinishedTimerRow(timer)).join('')
+        || (finishedSegments.length
+            ? finishedSegments.join('')
             : (loadingMessage || '<div class="timer-empty">No finished timers</div>'));
 
+    const activeCountEl = panel.querySelector('[data-timer-tab="active"] .timer-tab-count');
+    if (activeCountEl) {
+        activeCountEl.textContent =
+            activeTimers.length +
+            localIntervalActive.length +
+            localChecklistActive.length;
+    }
+    const finishedCountEl = panel.querySelector('[data-timer-tab="finished"] .timer-tab-count');
+    if (finishedCountEl) {
+        finishedCountEl.textContent =
+            finishedTimers.length +
+            localIntervalFinished.length +
+            localChecklistFinished.length;
+    }
+
+    const staleDetails = [];
+    STATE.openIntervalDetails.forEach(timerId => {
+        const row = panel.querySelector(`.timer-row[data-timer-id="${timerId}"] .timer-interval-details`);
+        if (!row) {
+            staleDetails.push(timerId);
+        }
+    });
+    staleDetails.forEach(id => STATE.openIntervalDetails.delete(id));
+
+    setTimerActiveTab(STATE.timerActiveTab || 'active');
     updateTimerCountdowns();
     syncTimerPanelState();
 }
 
 function renderTimerRow(timer, now, isFinishing) {
-    const remaining = remainingMs(timer, now);
-    const progressPercent = timer.durationMs > 0
-        ? Math.min(100, ((timer.durationMs - remaining) / timer.durationMs) * 100)
-        : 0;
+    const intervalState = computeIntervalState(timer, now);
+    const remaining = intervalState.intervalRemaining ?? remainingMs(timer, now);
+    const progressPercent = intervalState.progressPercent ?? 0;
     const isRunning = timer.state === 'running';
+    const source = timer.source || 'remote';
+    const isDetailsOpen = STATE.openIntervalDetails.has(timer.id);
     const rowClasses = [
         'timer-row',
         isRunning ? 'timer-row--running' : '',
         isFinishing ? 'timer-row--finishing' : ''
     ].join(' ');
+    const progressStyleParts = [`width:${progressPercent}%`];
+    if (intervalState.gradient) {
+        progressStyleParts.push(`background-image:${intervalState.gradient}`);
+    }
+    const progressStyle = progressStyleParts.join(';');
+    const hasIntervals = intervalState.hasMultiple;
+    const totalLabel = hasIntervals
+        ? `<span class="timer-total-length">Total ${formatDuration(intervalState.totalDuration)}</span>`
+        : '';
+    const intervalLabel = hasIntervals
+        ? `<span class="timer-interval-name-pill">${escapeHtml(intervalState.currentInterval.label)}</span>`
+        : '';
 
     return `
-        <div class="${rowClasses}" data-timer-id="${timer.id}">
-            <div class="timer-progress-fill" style="width:${progressPercent}%"></div>
-            <div class="timer-row-main">
-                <div class="timer-name">${escapeHtml(timer.label || 'Timer')}</div>
-                <div class="timer-remaining">${formatRemaining(remaining)}</div>
+        <div class="${rowClasses}" data-timer-id="${timer.id}" data-timer-source="${source}">
+            <div class="timer-progress-fill" style="${progressStyle}"></div>
+            <div class="timer-row-body">
+                <div class="timer-row-info">
+                    <div class="timer-name">${escapeHtml(timer.label || 'Timer')}</div>
+                    <div class="timer-time">
+                        ${intervalLabel}
+                        <span class="timer-remaining">${formatRemaining(remaining)}</span>
+                        ${totalLabel}
+                    </div>
+                </div>
+                <div class="timer-row-controls">
+                    ${hasIntervals ? `
+                        <button type="button"
+                            class="timer-interval-toggle ${isDetailsOpen ? 'is-open' : ''}"
+                            data-interval-panel-toggle="${timer.id}"
+                            data-timer-source="${source}"
+                            aria-expanded="${isDetailsOpen ? 'true' : 'false'}"
+                            title="View intervals">
+                            ▾
+                        </button>` : ''}
+                    <button type="button"
+                        class="timer-icon-btn"
+                        data-timer-action="${isRunning ? 'pause' : 'start'}"
+                        data-timer-id="${timer.id}"
+                        data-timer-source="${source}"
+                        aria-label="${isRunning ? 'Pause timer' : 'Start timer'}">
+                        ${isRunning ? '❚❚' : '►'}
+                    </button>
+                    <button type="button"
+                        class="timer-icon-btn timer-icon-btn--danger"
+                        data-timer-action="delete"
+                        data-timer-id="${timer.id}"
+                        data-timer-source="${source}"
+                        aria-label="Delete timer">
+                        ×
+                    </button>
+                </div>
             </div>
-            <div class="timer-row-actions">
-                <button type="button"
-                    class="timer-action-btn"
-                    data-timer-action="${isRunning ? 'pause' : 'start'}"
-                    data-timer-id="${timer.id}">
-                    ${isRunning ? 'Pause' : 'Start'}
-                </button>
-                <button type="button"
-                    class="timer-action-btn"
-                    data-timer-action="reset"
-                    data-timer-id="${timer.id}">
-                    Stop
-                </button>
-            </div>
+            ${hasIntervals ? renderIntervalDetails(timer, intervalState) : ''}
         </div>
     `;
 }
 
 function renderFinishedTimerRow(timer) {
+    const intervalState = computeIntervalState(timer, Date.now());
+    const source = timer.source || 'remote';
     return `
-        <div class="timer-row timer-row--finished" data-timer-id="${timer.id}">
+        <div class="timer-row timer-row--finished" data-timer-id="${timer.id}" data-timer-source="${source}">
             <div class="timer-progress-fill" style="width:100%;"></div>
-            <div class="timer-row-main">
-                <div class="timer-name">${escapeHtml(timer.label || 'Timer')}</div>
-                <div class="timer-remaining">Finished</div>
+            <div class="timer-row-body">
+                <div class="timer-row-info">
+                    <div class="timer-name">${escapeHtml(timer.label || 'Timer')}</div>
+                    <div class="timer-time">
+                        <span class="timer-remaining">Total ${formatDuration(intervalState.totalDuration)}</span>
+                    </div>
+                </div>
+                <div class="timer-row-controls">
+                    <button type="button"
+                        class="timer-icon-btn"
+                        data-timer-action="start"
+                        data-timer-id="${timer.id}"
+                        data-timer-source="${source}"
+                        aria-label="Restart timer">
+                        ⟳
+                    </button>
+                    <button type="button"
+                        class="timer-icon-btn timer-icon-btn--danger"
+                        data-timer-action="delete"
+                        data-timer-id="${timer.id}"
+                        data-timer-source="${source}"
+                        aria-label="Delete timer">
+                        ×
+                    </button>
+                </div>
             </div>
-            <div class="timer-row-actions">
-                <button type="button"
-                    class="timer-action-btn"
-                    data-timer-action="start"
-                    data-timer-id="${timer.id}">
-                    Restart
-                </button>
-                <button type="button"
-                    class="timer-action-btn"
-                    data-timer-action="delete"
-                    data-timer-id="${timer.id}">
-                    Delete
-                </button>
+        </div>
+    `;
+}
+
+function renderIntervalDetails(timer, intervalState) {
+    if (!intervalState || !intervalState.hasMultiple) return '';
+    const isOpen = STATE.openIntervalDetails.has(timer.id);
+    return `
+        <div class="timer-interval-details ${isOpen ? 'is-open' : ''}" data-interval-panel="${timer.id}">
+            ${intervalState.intervals.map((interval, index) => `
+                <div class="timer-interval-detail ${index === intervalState.currentIndex ? 'is-current' : ''}">
+                    <div class="timer-interval-detail-main">
+                        <input
+                            type="text"
+                            class="timer-interval-detail-name"
+                            value="${escapeHtml(interval.label)}"
+                            data-interval-meta-field="label"
+                            data-parent-timer="${timer.id}"
+                            data-interval-id="${interval.id}">
+                        <span class="timer-interval-detail-duration">
+                            ${formatDuration(interval.durationMs)}
+                        </span>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+function renderLocalIntervalTimerRow(timer, isFinished = false) {
+    if (!timer) return '';
+    const checkboxId = `local-timer-${timer.id}`;
+    return `
+        <div class="timer-row timer-row--notime" data-timer-id="${timer.id}" data-timer-source="local" data-timer-mode="checklist">
+            <div class="timer-row-body">
+                <label class="timer-no-time-checkbox" for="${checkboxId}">
+                    <input type="checkbox"
+                        id="${checkboxId}"
+                        data-local-timer-checkbox="${timer.id}"
+                        ${isFinished ? 'checked' : ''}>
+                    <span class="timer-no-time-checkmark"></span>
+                </label>
+                <div class="timer-row-info">
+                    <div class="timer-name">${escapeHtml(timer.label || 'Timer')}</div>
+                    <div class="timer-time">
+                        <span class="timer-no-time-label">${isFinished ? 'Completed checklist item' : 'Checklist item'}</span>
+                    </div>
+                </div>
+                <div class="timer-row-controls">
+                    ${isFinished ? `
+                    <button type="button"
+                        class="timer-icon-btn"
+                        data-local-timer-action="reset"
+                        data-local-timer-id="${timer.id}"
+                        aria-label="Reset item">
+                        ⟳
+                    </button>` : ''}
+                    <button type="button"
+                        class="timer-icon-btn timer-icon-btn--danger"
+                        data-local-timer-action="delete"
+                        data-local-timer-id="${timer.id}"
+                        aria-label="Remove item">
+                        ×
+                    </button>
+                </div>
             </div>
         </div>
     `;
 }
 
 function effectiveElapsedMs(timer, now) {
+    if (timer.source === 'local') {
+        return Math.max(0, Number(timer.elapsedMs) || 0);
+    }
     if (timer.state === 'running' && timer.startedAt) {
         const started = Date.parse(timer.startedAt);
         return timer.elapsedMs + (now - started);
@@ -821,6 +1609,124 @@ function formatRemaining(ms) {
     return parts.join(' ');
 }
 
+function formatDuration(ms) {
+    return formatRemaining(ms);
+}
+
+const TIMER_INTERVAL_COLORS = [
+    '#9fb2ff',
+    '#cba7ff',
+    '#8ff5ff',
+    '#8af7c9',
+    '#ffd08b'
+];
+
+function getIntervalColor(index = 0) {
+    if (!TIMER_INTERVAL_COLORS.length) return '#9fb2ff';
+    return TIMER_INTERVAL_COLORS[Math.abs(index) % TIMER_INTERVAL_COLORS.length];
+}
+
+function getTimerIntervals(timer) {
+    if (!timer) return [];
+    const meta = getTimerMetadata(timer.id);
+    let intervals = Array.isArray(meta?.intervals) && meta.intervals.length
+        ? meta.intervals.map((interval, index) => ({
+            id: interval.id || `interval-${timer.id}-${index}`,
+            label: interval.label || `Interval ${index + 1}`,
+            durationMs: Math.max(0, Number(interval.durationMs) || 0),
+            colorIndex: Number.isFinite(interval.colorIndex) ? interval.colorIndex : index
+        }))
+        : [{
+            id: `${timer.id}-default`,
+            label: timer.label || 'Timer',
+            durationMs: Math.max(0, timer.durationMs || 0),
+            colorIndex: 0
+        }];
+
+    if (!intervals.length) {
+        intervals = [{
+            id: `${timer.id}-default`,
+            label: timer.label || 'Timer',
+            durationMs: Math.max(0, timer.durationMs || 0),
+            colorIndex: 0
+        }];
+    }
+
+    const normalizedTotal = Math.max(1, timer.durationMs || 1);
+    let cumulative = intervals.reduce((sum, interval) => sum + interval.durationMs, 0);
+    if (cumulative <= 0) {
+        const evenDuration = normalizedTotal / intervals.length;
+        intervals = intervals.map((interval, index) => ({
+            ...interval,
+            durationMs: evenDuration,
+            colorIndex: interval.colorIndex ?? index
+        }));
+    } else if (Math.abs(cumulative - normalizedTotal) > 1000 && normalizedTotal > 0) {
+        const diff = normalizedTotal - cumulative;
+        const last = intervals[intervals.length - 1];
+        last.durationMs = Math.max(0, last.durationMs + diff);
+        cumulative = intervals.reduce((sum, interval) => sum + interval.durationMs, 0);
+    }
+
+    return intervals.map(interval => ({
+        ...interval,
+        color: getIntervalColor(interval.colorIndex)
+    }));
+}
+
+function buildIntervalGradient(intervals, totalDuration) {
+    if (!intervals || !intervals.length || totalDuration <= 0) {
+        return null;
+    }
+    let cursor = 0;
+    const stops = intervals.map(interval => {
+        const startPercent = (cursor / totalDuration) * 100;
+        cursor += interval.durationMs;
+        const endPercent = (cursor / totalDuration) * 100;
+        return `${interval.color} ${startPercent}%, ${interval.color} ${endPercent}%`;
+    }).join(', ');
+    return `linear-gradient(90deg, ${stops})`;
+}
+
+function computeIntervalState(timer, now) {
+    const intervals = getTimerIntervals(timer);
+    const totalDuration = Math.max(1, timer.durationMs || intervals.reduce((sum, interval) => sum + interval.durationMs, 0) || 1);
+    const remaining = remainingMs(timer, now);
+    const elapsed = Math.max(0, totalDuration - remaining);
+
+    let currentIndex = 0;
+    let accumulated = 0;
+    for (let index = 0; index < intervals.length; index++) {
+        const interval = intervals[index];
+        const intervalEnd = accumulated + interval.durationMs;
+        if (elapsed < intervalEnd || index === intervals.length - 1) {
+            currentIndex = index;
+            break;
+        }
+        accumulated = intervalEnd;
+    }
+
+    const currentInterval = intervals[currentIndex] || intervals[0];
+    const intervalStart = intervals.slice(0, currentIndex).reduce((sum, interval) => sum + interval.durationMs, 0);
+    const intervalElapsed = Math.max(0, elapsed - intervalStart);
+    const intervalRemaining = Math.max(0, currentInterval.durationMs - intervalElapsed);
+    const progressPercent = totalDuration > 0
+        ? Math.min(100, ((totalDuration - remaining) / totalDuration) * 100)
+        : 0;
+
+    return {
+        intervals,
+        currentInterval,
+        currentIndex,
+        intervalRemaining,
+        totalRemaining: remaining,
+        totalDuration,
+        gradient: buildIntervalGradient(intervals, totalDuration),
+        hasMultiple: intervals.length > 1,
+        progressPercent
+    };
+}
+
 function toggleTimerPanel() {
     STATE.timerPanelVisible = !STATE.timerPanelVisible;
     syncTimerPanelState();
@@ -841,6 +1747,63 @@ function syncTimerPanelState() {
     }
 }
 
+function setTimerActiveTab(tab) {
+    if (tab !== 'active' && tab !== 'finished') {
+        return;
+    }
+    STATE.timerActiveTab = tab;
+    const panel = document.querySelector('.timer-panel');
+    if (!panel) return;
+
+    panel.querySelectorAll('.timer-tab-btn').forEach(btn => {
+        const isMatch = btn.dataset.timerTab === tab;
+        btn.classList.toggle('is-active', isMatch);
+        btn.setAttribute('aria-selected', isMatch ? 'true' : 'false');
+    });
+
+    panel.querySelectorAll('.timer-tab-content').forEach(content => {
+        const isMatch = content.dataset.tab === tab;
+        content.classList.toggle('is-visible', isMatch);
+        content.setAttribute('aria-hidden', isMatch ? 'false' : 'true');
+    });
+}
+
+function toggleIntervalDetails(timerId) {
+    if (!timerId) return;
+    if (STATE.openIntervalDetails.has(timerId)) {
+        STATE.openIntervalDetails.delete(timerId);
+    } else {
+        STATE.openIntervalDetails.add(timerId);
+    }
+    const row = document.querySelector(`.timer-row[data-timer-id="${timerId}"]`);
+    if (!row) return;
+    const toggleBtn = row.querySelector(`[data-interval-panel-toggle="${timerId}"]`);
+    const details = row.querySelector('.timer-interval-details');
+    const isOpen = STATE.openIntervalDetails.has(timerId);
+    toggleBtn?.classList.toggle('is-open', isOpen);
+    toggleBtn?.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    details?.classList.toggle('is-open', isOpen);
+}
+
+function queueTimerAutoRepeat(timer) {
+    if (!timer || !timer.id) return;
+    const metadata = getTimerMetadata(timer.id);
+    if (!metadata?.repeat || STATE.autoRepeatQueue.has(timer.id)) {
+        return;
+    }
+    STATE.autoRepeatQueue.add(timer.id);
+    (async () => {
+        try {
+            await sendTimerMutation('command', { id: timer.id, command: 'reset' });
+            await sendTimerMutation('command', { id: timer.id, command: 'start' });
+        } catch (error) {
+            console.error('Timer auto-repeat error:', error);
+        } finally {
+            STATE.autoRepeatQueue.delete(timer.id);
+        }
+    })();
+}
+
 async function handleTimerFormSubmit(event) {
     event.preventDefault();
     const form = event.target.closest('.timer-add-form');
@@ -850,35 +1813,72 @@ async function handleTimerFormSubmit(event) {
     const countdownInputs = form.querySelectorAll('.timer-count-field');
     const dateInput = form.querySelector('.timer-date-input');
 
-    const label = (labelInput?.value || '').trim() || 'Timer';
+    const draft = STATE.timerDraft || createTimerDraft();
+    const label = (draft.label || labelInput?.value || '').trim() || 'Timer';
     const countdownMs = calculateCountdownMs(countdownInputs);
     const dateDurationMs = calculateDateTargetMs(dateInput);
+    const hasIntervals = Array.isArray(draft.intervals) && draft.intervals.length > 0;
+    const intervalDurationMs = hasIntervals
+        ? draft.intervals.reduce((sum, interval) => sum + (Number(interval.durationMs) || 0), 0)
+        : 0;
+
+    if (hasIntervals && intervalDurationMs > 0) {
+        createLocalIntervalTimer({ label, intervals: draft.intervals });
+        countdownInputs.forEach(select => {
+            select.value = '';
+            select.disabled = false;
+        });
+        if (dateInput) {
+            dateInput.value = '';
+            dateInput.disabled = false;
+        }
+        resetTimerDraft();
+        return;
+    }
 
     let durationMs = 0;
-    if (countdownMs > 0 && !dateInput?.value) {
+    if (hasIntervals) {
+        durationMs = intervalDurationMs;
+    } else if (countdownMs > 0 && !dateInput?.value) {
         durationMs = countdownMs;
     } else if (dateDurationMs > 0 && countdownMs === 0) {
         durationMs = dateDurationMs;
     }
 
     if (durationMs <= 0) {
-        alert('Please provide a countdown duration or a future date/time.');
+        createLocalIntervalTimer({ label, intervals: draft.intervals || [] });
+        countdownInputs.forEach(select => {
+            select.value = '';
+            select.disabled = false;
+        });
+        if (dateInput) {
+            dateInput.value = '';
+            dateInput.disabled = false;
+        }
+        resetTimerDraft();
         return;
     }
 
     const previousIds = new Set(STATE.timers.map(timer => timer.id));
+    const metadataPayload = {
+        repeat: Boolean(draft.repeat),
+        intervals: hasIntervals ? draft.intervals : []
+    };
+
     try {
         const board = await sendTimerMutation('create', { label, durationMs });
         const newTimer = board?.timers?.find(timer => !previousIds.has(timer.id));
         if (newTimer) {
             await sendTimerMutation('command', { id: newTimer.id, command: 'start' });
+            if (metadataPayload.repeat || metadataPayload.intervals.length) {
+                setTimerMetadata(newTimer.id, metadataPayload);
+            }
         }
     } catch (error) {
         console.error('Timer create error:', error);
         alert('Unable to create timer. Please try again when the timer service is reachable.');
     }
 
-    labelInput.value = '';
     countdownInputs.forEach(select => {
         select.value = '';
         select.disabled = false;
@@ -887,6 +1887,7 @@ async function handleTimerFormSubmit(event) {
         dateInput.value = '';
         dateInput.disabled = false;
     }
+    resetTimerDraft();
 }
 
 function calculateCountdownMs(inputs) {
@@ -937,7 +1938,15 @@ function handleCountdownInputChange(form) {
     dateInput.disabled = hasCountdown;
     if (hasCountdown) {
         dateInput.value = '';
+        updateTimerDraft({ targetDate: '' });
     }
+    const newCountdown = { ...(STATE.timerDraft?.countdown || {}) };
+    countdownInputs.forEach(select => {
+        const unit = select.dataset.unit;
+        if (!unit) return;
+        newCountdown[unit] = select.value || '';
+    });
+    updateTimerDraft({ countdown: newCountdown });
 }
 
 function handleDateInputChange(form) {
@@ -953,30 +1962,160 @@ function handleDateInputChange(form) {
             input.value = '';
         }
     });
+    const clearedCountdown = hasDate
+        ? { days: '', hours: '', minutes: '', seconds: '' }
+        : { ...(STATE.timerDraft?.countdown || {}) };
+    updateTimerDraft({
+        targetDate: dateInput.value,
+        countdown: clearedCountdown
+    });
+}
+
+function handleTimerPanelChange(event) {
+    const checkbox = event.target.closest('[data-local-timer-checkbox]');
+    if (checkbox) {
+        const timerId = checkbox.dataset.localTimerCheckbox;
+        if (timerId) {
+            setLocalIntervalTimerState(timerId, checkbox.checked ? 'finished' : 'active');
+        }
+        return;
+    }
 }
 
 async function handleTimerPanelAction(event) {
+    const panel = event.currentTarget;
+
+    const checklistButton = event.target.closest('[data-local-timer-action]');
+    if (checklistButton) {
+        const { localTimerAction, localTimerId } = checklistButton.dataset;
+        if (localTimerAction === 'delete' && localTimerId) {
+            deleteLocalIntervalTimer(localTimerId);
+            return;
+        }
+        if (localTimerAction === 'reset' && localTimerId) {
+            setLocalIntervalTimerState(localTimerId, 'active');
+            return;
+        }
+        return;
+    }
+
+    const tabButton = event.target.closest('[data-timer-tab]');
+    if (tabButton) {
+        event.preventDefault();
+        setTimerActiveTab(tabButton.dataset.timerTab);
+        return;
+    }
+
+    const durationToggle = event.target.closest('[data-timer-duration-toggle]');
+    if (durationToggle) {
+        event.preventDefault();
+        const willOpen = !STATE.timerDraft.durationMenuOpen;
+        updateTimerDraft({
+            durationMenuOpen: willOpen,
+            dateMenuOpen: willOpen ? false : STATE.timerDraft.dateMenuOpen
+        });
+        return;
+    }
+
+    const dateToggle = event.target.closest('[data-timer-date-toggle]');
+    if (dateToggle) {
+        event.preventDefault();
+        const willOpen = !STATE.timerDraft.dateMenuOpen;
+        updateTimerDraft({
+            dateMenuOpen: willOpen,
+            durationMenuOpen: willOpen ? false : STATE.timerDraft.durationMenuOpen
+        });
+        return;
+    }
+
+    const repeatToggle = event.target.closest('[data-timer-repeat-toggle]');
+    if (repeatToggle) {
+        event.preventDefault();
+        updateTimerDraft({ repeat: !STATE.timerDraft.repeat });
+        return;
+    }
+
+    const addIntervalBtn = event.target.closest('[data-timer-add-interval]');
+    if (addIntervalBtn) {
+        event.preventDefault();
+        const form = panel.querySelector('.timer-add-form');
+        if (!form) return;
+        const countdownInputs = form.querySelectorAll('.timer-count-field');
+        const durationMs = calculateCountdownMs(countdownInputs);
+        if (durationMs <= 0) {
+            alert('Select a duration to append to the interval stack.');
+            return;
+        }
+        appendDraftInterval(durationMs);
+        const cleared = { days: '', hours: '', minutes: '', seconds: '' };
+        countdownInputs.forEach(select => {
+            select.value = '';
+        });
+        updateTimerDraft({
+            countdown: cleared
+        });
+        return;
+    }
+
+    const draftIntervalRemove = event.target.closest('[data-draft-interval-remove]');
+    if (draftIntervalRemove) {
+        event.preventDefault();
+        removeDraftInterval(draftIntervalRemove.dataset.draftIntervalRemove);
+        return;
+    }
+
+    const intervalToggle = event.target.closest('[data-interval-panel-toggle]');
+    if (intervalToggle) {
+        event.preventDefault();
+        toggleIntervalDetails(intervalToggle.dataset.intervalPanelToggle);
+        return;
+    }
+
     const actionButton = event.target.closest('[data-timer-action]');
     if (!actionButton) return;
 
     const { timerAction, timerId } = actionButton.dataset;
+    const timerSource = actionButton.dataset.timerSource || 'remote';
     if (!timerId) return;
+    if (timerSource === 'local') {
+        const localTimer = findLocalIntervalTimer(timerId);
+        if (timerAction === 'delete') {
+            deleteLocalIntervalTimer(timerId);
+            return;
+        }
+        if (localTimer && localTimer.mode !== 'interval') {
+            if (timerAction === 'reset') {
+                setLocalIntervalTimerState(timerId, 'active');
+            } else if (timerAction === 'start') {
+                setLocalIntervalTimerState(timerId, localTimer.state === 'finished' ? 'active' : 'finished');
+            }
+            return;
+        }
+        if (timerAction === 'start') {
+            if (localTimer && localTimer.state === 'finished') {
+                resetLocalIntervalTimer(timerId);
+            }
+            startLocalIntervalTimer(timerId);
+            return;
+        }
+        if (timerAction === 'pause') {
+            pauseLocalIntervalTimer(timerId);
+            return;
+        }
+        if (timerAction === 'reset') {
+            resetLocalIntervalTimer(timerId);
+            return;
+        }
+        return;
+    }
     const timer = STATE.timers.find(entry => entry.id === timerId);
 
     if (timerAction === 'delete') {
         try {
             await sendTimerMutation('delete', { id: timerId });
+            deleteTimerMetadata(timerId);
         } catch (error) {
             console.error('Timer delete error:', error);
-        }
-        return;
-    }
-
-    if (timerAction === 'reset') {
-        try {
-            await sendTimerMutation('command', { id: timerId, command: 'reset' });
-        } catch (error) {
-            console.error('Timer reset error:', error);
         }
         return;
     }
@@ -1001,6 +2140,30 @@ async function handleTimerPanelAction(event) {
         }
     }
 }
+
+function handleTimerPanelInput(event) {
+    const labelInput = event.target.closest('.timer-label-input');
+    if (labelInput) {
+        updateTimerDraft({ label: labelInput.value });
+        return;
+    }
+
+    const draftIntervalInput = event.target.closest('[data-draft-interval-field="label"]');
+    if (draftIntervalInput) {
+        renameDraftInterval(draftIntervalInput.dataset.intervalId, draftIntervalInput.value);
+        return;
+    }
+
+    const intervalMetaInput = event.target.closest('[data-interval-meta-field="label"]');
+    if (intervalMetaInput) {
+        renameTimerInterval(
+            intervalMetaInput.dataset.parentTimer,
+            intervalMetaInput.dataset.intervalId,
+            intervalMetaInput.value
+        );
+    }
+}
+
 
 async function loadNextcloudFolders() {
     if (!CONFIG.NEXTCLOUD_URL || CONFIG.NEXTCLOUD_USER === 'YOUR_USERNAME') {
@@ -1162,45 +2325,139 @@ function displayViewToggle() {
 }
 
 function displayTimerPanel() {
+    const draft = STATE.timerDraft || createTimerDraft();
+    const activeTimers = STATE.timers
+        .filter(timer => timer.state !== 'finished' || STATE.finishingTimers.has(timer.id));
+    const finishedTimers = STATE.timers
+        .filter(timer => timer.state === 'finished' && !STATE.finishingTimers.has(timer.id));
+
+    const tab = STATE.timerActiveTab || 'active';
+
     return `
         <div class="timer-panel ${STATE.timerPanelVisible ? 'open' : ''}">
-            <form class="timer-add-form">
-                <input type="text" class="timer-label-input" placeholder="Timer name">
-                <div class="timer-countdown-inputs">
-                    <select class="timer-count-field" data-unit="days">
-                        <option value="">Days</option>
-                        ${buildTimerOptions(30)}
-                    </select>
-                    <select class="timer-count-field" data-unit="hours">
-                        <option value="">Hours</option>
-                        ${buildTimerOptions(23)}
-                    </select>
-                    <select class="timer-count-field" data-unit="minutes">
-                        <option value="">Minutes</option>
-                        ${buildTimerOptions(59)}
-                    </select>
-                    <select class="timer-count-field" data-unit="seconds">
-                        <option value="">Seconds</option>
-                        ${buildTimerOptions(59)}
-                    </select>
+            <div class="timer-board">
+                <div class="timer-tab-bar" role="tablist">
+                    <button type="button"
+                        class="timer-tab-btn ${tab === 'active' ? 'is-active' : ''}"
+                        data-timer-tab="active">
+                        <span>Active Timers</span>
+                        <span class="timer-tab-count">${activeTimers.length}</span>
+                    </button>
+                    <button type="button"
+                        class="timer-tab-btn ${tab === 'finished' ? 'is-active' : ''}"
+                        data-timer-tab="finished">
+                        <span>Finished Timers</span>
+                        <span class="timer-tab-count">${finishedTimers.length}</span>
+                    </button>
                 </div>
-                <div class="timer-date-picker">
-                    <input type="datetime-local" class="timer-date-input">
-                </div>
-                <button type="submit" class="timer-add-btn">Add Timer</button>
-            </form>
-            <div class="timer-lists">
-                <div class="timer-list">
-                    <div class="timer-list-header">Active Timers</div>
-                    <div class="timer-items"></div>
-                </div>
-                <div class="timer-list">
-                    <div class="timer-list-header">Finished Timers</div>
-                    <div class="finished-timer-items"></div>
+                <div class="timer-tab-contents">
+                    <div class="timer-tab-content ${tab === 'active' ? 'is-visible' : ''}" data-tab="active">
+                        <div class="timer-items"></div>
+                    </div>
+                    <div class="timer-tab-content ${tab === 'finished' ? 'is-visible' : ''}" data-tab="finished">
+                        <div class="finished-timer-items"></div>
+                    </div>
                 </div>
             </div>
+
+            <form class="timer-add-form">
+                <div class="timer-add-shell">
+                    <div class="timer-add-row">
+                        <input type="text"
+                            class="timer-label-input"
+                            placeholder="Timer name"
+                            value="${escapeHtml(draft.label || '')}">
+                        <div class="timer-add-buttons">
+                            <button type="button"
+                                class="timer-chip ${draft.durationMenuOpen ? 'is-active' : ''}"
+                                data-timer-duration-toggle>
+                                Timer
+                            </button>
+                            <button type="button"
+                                class="timer-chip ${draft.dateMenuOpen ? 'is-active' : ''}"
+                                data-timer-date-toggle>
+                                Calendar
+                            </button>
+                            <button type="button"
+                                class="timer-chip timer-chip--repeat ${draft.repeat ? 'is-active' : ''}"
+                                data-timer-repeat-toggle
+                                aria-pressed="${draft.repeat}">
+                                Repeat
+                            </button>
+                            <button type="button"
+                                class="timer-chip timer-chip--add"
+                                data-timer-add-interval
+                                title="Add interval from current duration">
+                                +
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="timer-duration-menu ${draft.durationMenuOpen ? 'is-open' : ''}">
+                        <div class="timer-countdown-inputs">
+                            <select class="timer-count-field" data-unit="days">
+                                <option value="">Days</option>
+                                ${buildTimerOptions(30)}
+                            </select>
+                            <select class="timer-count-field" data-unit="hours">
+                                <option value="">Hours</option>
+                                ${buildTimerOptions(23)}
+                            </select>
+                            <select class="timer-count-field" data-unit="minutes">
+                                <option value="">Minutes</option>
+                                ${buildTimerOptions(59)}
+                            </select>
+                            <select class="timer-count-field" data-unit="seconds">
+                                <option value="">Seconds</option>
+                                ${buildTimerOptions(59)}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="timer-date-menu ${draft.dateMenuOpen ? 'is-open' : ''}">
+                        <input type="datetime-local"
+                            class="timer-date-input"
+                            value="${draft.targetDate || ''}">
+                    </div>
+
+                    <div class="timer-interval-collection">
+                        ${renderIntervalDraftList(draft)}
+                    </div>
+
+                    <div class="timer-add-footer">
+                        <button type="submit" class="timer-add-btn">Add Timer</button>
+                    </div>
+                </div>
+            </form>
         </div>
     `;
+}
+
+function renderIntervalDraftList(draft) {
+    if (!draft || !Array.isArray(draft.intervals) || draft.intervals.length === 0) {
+        return '<div class="timer-empty timer-empty--compact">Add intervals to stack complex timers</div>';
+    }
+    return draft.intervals.map((interval, index) => `
+        <div class="timer-interval-draft" data-draft-interval-id="${interval.id}">
+            <div class="timer-interval-draft-main">
+                <input
+                    type="text"
+                    class="timer-interval-name"
+                    value="${escapeHtml(interval.label || `Interval ${index + 1}`)}"
+                    data-draft-interval-field="label"
+                    data-interval-id="${interval.id}">
+                <div class="timer-interval-duration">
+                    ${formatDuration(interval.durationMs)}
+                </div>
+            </div>
+            <button type="button"
+                class="timer-interval-remove"
+                data-draft-interval-remove="${interval.id}"
+                aria-label="Remove interval">
+                ×
+            </button>
+        </div>
+    `).join('');
 }
 
 function buildTimerOptions(max) {
@@ -1272,22 +2529,24 @@ function displayFeed() {
         return;
     }
 
-    const feedHTML = `
-        <div class="bluesky-feed">
-            ${items.map(item => createFeedCard(item)).join('')}
-        </div>
-    `;
-
-    // Load More button (only show if there are more items to load)
     const loadMoreHTML = STATE.feedHasMore ? `
-        <div style="padding: 1rem; text-align: center;">
+        <div class="feed-load-more-row">
             <button class="feed-load-more" ${STATE.feedLoading ? 'disabled' : ''}>
                 ${STATE.feedLoading ? 'Loading...' : `Load More (${CONFIG.FEED_ITEMS_PER_PAGE})`}
             </button>
         </div>
     ` : '';
 
-    DOM.overview.innerHTML = feedHTML + loadMoreHTML + controlsHTML;
+    const feedHTML = `
+        <div class="feed-region">
+            <div class="bluesky-feed">
+                ${items.map(item => createFeedCard(item)).join('')}
+            </div>
+            ${loadMoreHTML}
+        </div>
+    `;
+
+    DOM.overview.innerHTML = feedHTML + controlsHTML;
     renderTimerLists();
     attachViewToggleHandlers();
     attachFolderClickHandlers();
@@ -1376,15 +2635,27 @@ function createFeedCard(item) {
             </a>
         ` : '';
 
+    const avatarMarkup = (() => {
+        if (item.feedTitle && item.feedTitle.toLowerCase().includes('tiktok') && item.body) {
+            const temp = document.createElement('div');
+            temp.innerHTML = item.body;
+            const profileImg = temp.querySelector('img');
+            if (profileImg && profileImg.getAttribute('src')) {
+                return `<img src="${escapeHtml(profileImg.getAttribute('src'))}" alt="" class="feed-avatar">`;
+            }
+        }
+        return domain
+            ? `<img src="https://www.google.com/s2/favicons?domain=${domain}&sz=64" alt="" class="feed-avatar">`
+            : `<div class="feed-avatar feed-avatar--fallback">${escapeHtml(feedName.charAt(0) || '?')}</div>`;
+    })();
+
     return `
         <article class="feed-item ${isUnread ? '' : 'feed-item--read'}"
                  data-link="${escapeHtml(item.url || '')}"
                  data-item-id="${item.id}"
                  data-unread="${isUnread}">
             <div class="feed-item-top">
-                ${domain
-                    ? `<img src="https://www.google.com/s2/favicons?domain=${domain}&sz=64" alt="" class="feed-avatar">`
-                    : `<div class="feed-avatar feed-avatar--fallback">${escapeHtml(feedName.charAt(0) || '?')}</div>`}
+                ${avatarMarkup}
                 <div class="feed-source">
                     <span class="feed-source-name">${escapeHtml(feedName)}</span>
                     <div class="feed-meta-line">
@@ -1583,6 +2854,8 @@ function attachTimerControlHandlers() {
     if (timerPanel && !timerPanel.dataset.bound) {
         timerPanel.dataset.bound = 'true';
         timerPanel.addEventListener('click', handleTimerPanelAction);
+        timerPanel.addEventListener('change', handleTimerPanelChange);
+        timerPanel.addEventListener('input', handleTimerPanelInput);
     }
 
     const form = document.querySelector('.timer-add-form');
@@ -1600,6 +2873,8 @@ function attachTimerControlHandlers() {
             dateInput.addEventListener('input', () => handleDateInputChange(form));
         }
     }
+
+    requestTimerDraftUIUpdate();
 }
 
 function markFeedItemAsRead(itemId) {
@@ -2091,13 +3366,13 @@ function enterSearchMode(clearInput = false) {
                 <img src="icons/perplexity.svg" alt="Perplexity" style="width:24px; height:24px; flex-shrink:0;">
                 <span>Perplexity AI</span>
             </a>
-            <button type="button" class="quick-task-btn">
-                <img src="icons/tasks.webp" alt="Tasks" style="width:24px; height:24px; flex-shrink:0;">
-                <span>Add to Tasks</span>
+            <button type="button" class="quick-timer-btn">
+                <img src="icons/timer.webp" alt="Timer" style="width:24px; height:24px; flex-shrink:0;">
+                <span>Add Timer</span>
             </button>
         </div>
     `;
-    attachQuickTaskButton(DOM.overview, '');
+    attachQuickTimerButton(DOM.overview, '');
 }
 
 function exitSearchMode() {
@@ -2159,13 +3434,13 @@ async function handleSearchInput(event) {
                     <img src="icons/perplexity.svg" alt="Perplexity" style="width:24px; height:24px; flex-shrink:0;">
                     <span>Perplexity AI</span>
                 </a>
-                <button type="button" class="quick-task-btn">
-                    <img src="icons/tasks.webp" alt="Tasks" style="width:24px; height:24px; flex-shrink:0;">
-                    <span>Add to Tasks</span>
+                <button type="button" class="quick-timer-btn">
+                    <img src="icons/timer.webp" alt="Timer" style="width:24px; height:24px; flex-shrink:0;">
+                    <span>Add Timer</span>
                 </button>
             </div>
         `;
-        attachQuickTaskButton(DOM.overview, '');
+        attachQuickTimerButton(DOM.overview, '');
         return;
     }
 
@@ -2348,16 +3623,16 @@ function displaySuggestions(suggestions, container) {
                 <img src="icons/perplexity.svg" alt="Perplexity" style="width:24px; height:24px; flex-shrink:0;">
                 <span>Perplexity AI</span>
             </a>
-            <button type="button" class="quick-task-btn">
-                <img src="icons/tasks.webp" alt="Tasks" style="width:24px; height:24px; flex-shrink:0;">
-                <span>Add to Tasks</span>
+            <button type="button" class="quick-timer-btn">
+                <img src="icons/timer.webp" alt="Timer" style="width:24px; height:24px; flex-shrink:0;">
+                <span>Add Timer</span>
             </button>
         </div>
     `;
 
     if (!suggestions || suggestions.length === 0) {
         container.innerHTML = quickActionsHTML;
-        attachQuickTaskButton(container, query);
+        attachQuickTimerButton(container, query);
         return;
     }
 
@@ -2418,6 +3693,48 @@ function attachQuickTaskButton(container, query) {
     const btn = container.querySelector('.quick-task-btn');
     if (btn) {
         btn.addEventListener('click', () => openTaskModal(query));
+    }
+}
+
+function attachQuickTimerButton(container, query) {
+    if (!container) return;
+    const btn = container.querySelector('.quick-timer-btn');
+    if (btn) {
+        btn.addEventListener('click', () => {
+            // Create a simple timer with the query as the label
+            const timerLabel = query || 'New Timer';
+
+            // Create a local timer (checklist/no-time mode) with the query as label
+            const timer = {
+                id: generateLocalIntervalTimerId(),
+                label: timerLabel,
+                intervals: [],
+                durationMs: 0,
+                elapsedMs: 0,
+                state: 'idle',
+                mode: 'checklist',
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+                startedAt: null
+            };
+
+            STATE.localIntervalTimers.push(timer);
+            persistLocalIntervalTimers();
+
+            // Show the timer panel and render
+            if (!STATE.timerPanelVisible) {
+                STATE.timerPanelVisible = true;
+            }
+            renderTimerLists();
+
+            // Show confirmation
+            btn.textContent = 'Timer Added!';
+            btn.disabled = true;
+            setTimeout(() => {
+                btn.innerHTML = '<img src="icons/timer.webp" alt="Timer" style="width:24px; height:24px; flex-shrink:0;"><span>Add Timer</span>';
+                btn.disabled = false;
+            }, 2000);
+        });
     }
 }
 
@@ -2789,7 +4106,7 @@ function displayWikipediaArticle(article) {
             .join('');
 
         tocHTML = `
-            <div style="background:transparent; border:1px solid #888; padding:0.75rem;">
+            <div class="wiki-toc" style="background:transparent; border:1px solid #888; padding:0.75rem;">
                 <div style="font-weight:bold; margin-bottom:0.5rem;">Contents</div>
                 ${tocItems}
             </div>
@@ -2815,24 +4132,26 @@ function displayWikipediaArticle(article) {
 
     // Display full article in text
     DOM.text.innerHTML = `
-        ${tempDiv.innerHTML}
-        <p style="margin-top:1rem;">
-            <a href="https://en.wikipedia.org/wiki/${encodeURIComponent(article.title)}"
-               target="_blank"
-               style="color:#4a9eff;">
-                Read more on Wikipedia
-            </a>
-        </p>
+        <div class="wiki-article">
+            ${tempDiv.innerHTML}
+            <p style="margin-top:1rem;">
+                <a href="https://en.wikipedia.org/wiki/${encodeURIComponent(article.title)}"
+                   target="_blank"
+                   style="color:#4a9eff;">
+                    Read more on Wikipedia
+                </a>
+            </p>
+        </div>
     `;
 
     // Display TOC and infobox in overview
     DOM.overview.innerHTML = `
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:1%;">
-            <div>
+            <div class="wiki-toc-container">
                 ${infoboxImageHTML}
                 ${tocHTML || '<p>No table of contents</p>'}
             </div>
-            <div>${infoboxHTML || '<p>No infobox available</p>'}</div>
+            <div class="wiki-infobox-container">${infoboxHTML || '<p>No infobox available</p>'}</div>
         </div>
     `;
 
@@ -3119,10 +4438,10 @@ async function showSearchFallback(query) {
             <a href="https://duckduckgo.com/?q=${encodedQuery}" target="_blank">DuckDuckGo</a>
             <a href="https://www.google.com/search?tbm=isch&q=${encodedQuery}" target="_blank">Google Images</a>
             <a href="https://www.perplexity.ai/search?q=${encodedQuery}" target="_blank">Perplexity AI</a>
-            <button type="button" class="quick-task-btn">Add to Tasks</button>
+            <button type="button" class="quick-timer-btn">Add Timer</button>
         </div>
     `;
-    attachQuickTaskButton(DOM.overview, query);
+    attachQuickTimerButton(DOM.overview, query);
 
     // Get AI answer in text area
     DOM.text.innerHTML = '<div style="padding:1rem; color:#888;">Getting AI answer...</div>';
