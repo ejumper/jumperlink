@@ -44,6 +44,8 @@ const LOCAL_STORAGE_KEYS = {
 };
 
 const FALLBACK_FAVICON = 'icons/web.webp';
+const INVIDIOUS_EMBED_HOSTS = ['inv.nadeko.net', 'yewtu.be', 'invidious.f5.si'];
+const HTML_ENTITY_PARSER = typeof document !== 'undefined' ? document.createElement('textarea') : null;
 
 // ============================================================================
 // STATE MANAGEMENT
@@ -2622,7 +2624,7 @@ function createFeedCard(item) {
     const showTitle = shouldDisplayFeedTitle(normalizedTitle);
     const rawExcerpt = CONFIG.SHOW_POST_CONTENT ? getFeedExcerpt(item.body) : '';
     const excerpt = shouldDisplayFeedExcerpt(rawExcerpt, normalizedTitle, domain, feedName) ? rawExcerpt : '';
-    const mediaMarkup = extractFeedMedia(item);
+    const media = extractFeedMedia(item);
     const timestamp = formatPublishDate(item.pubDate);
     const metrics = extractEngagementMetrics(item);
     const isUnread = isItemUnread(item);
@@ -2666,7 +2668,7 @@ function createFeedCard(item) {
             </div>
             ${titleMarkup}
             ${excerpt ? `<p class="feed-excerpt">${escapeHtml(excerpt)}</p>` : ''}
-            ${mediaMarkup ? `<div class="feed-media">${mediaMarkup}</div>` : ''}
+            ${media ? `<div class="feed-media${media.variant ? ` feed-media--${media.variant}` : ''}">${media.markup}</div>` : ''}
             ${metrics ? `
                 <div class="feed-metrics">
                     ${metrics.map(metric => `
@@ -2692,20 +2694,47 @@ function getFeedExcerpt(body) {
 function extractFeedMedia(item) {
     if (!item) return null;
 
-    if (item.enclosureLink && item.enclosureMime && item.enclosureMime.startsWith('image/')) {
-        return `<img src="${escapeHtml(item.enclosureLink)}" alt="" loading="lazy">`;
+    const temp = item.body ? document.createElement('div') : null;
+    if (temp) {
+        temp.innerHTML = item.body;
     }
 
-    if (!item.body) return null;
+    const embedUrl = findEmbeddableVideoUrl(item, temp);
+    if (embedUrl) {
+        return {
+            variant: 'video',
+            markup: `
+                <div class="feed-video-wrapper">
+                    <iframe
+                        src="${escapeHtml(embedUrl)}"
+                        title="Embedded video"
+                        loading="lazy"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                        allowfullscreen
+                        referrerpolicy="strict-origin-when-cross-origin">
+                    </iframe>
+                </div>
+            `
+        };
+    }
 
-    const temp = document.createElement('div');
-    temp.innerHTML = item.body;
+    if (item.enclosureLink && item.enclosureMime && item.enclosureMime.startsWith('image/')) {
+        return {
+            variant: 'image',
+            markup: `<img src="${escapeHtml(item.enclosureLink)}" alt="" loading="lazy">`
+        };
+    }
+
+    if (!temp) return null;
 
     const image = temp.querySelector('img');
     if (image) {
         const src = image.getAttribute('src');
         if (src) {
-            return `<img src="${escapeHtml(src)}" alt="${escapeHtml(image.getAttribute('alt') || '')}" loading="lazy">`;
+            return {
+                variant: 'image',
+                markup: `<img src="${escapeHtml(src)}" alt="${escapeHtml(image.getAttribute('alt') || '')}" loading="lazy">`
+            };
         }
     }
 
@@ -2713,8 +2742,78 @@ function extractFeedMedia(item) {
     if (video) {
         const src = video.getAttribute('src');
         if (src) {
-            return `<a href="${escapeHtml(src)}" target="_blank" rel="noopener noreferrer" class="feed-media-link">View media</a>`;
+            return {
+                variant: 'link',
+                markup: `<a href="${escapeHtml(src)}" target="_blank" rel="noopener noreferrer" class="feed-media-link">View media</a>`
+            };
         }
+    }
+
+    return null;
+}
+
+function findEmbeddableVideoUrl(item, tempNode) {
+    const candidates = [];
+    const pushCandidate = (value) => {
+        if (!value) return;
+        candidates.push(value);
+    };
+
+    pushCandidate(item?.url);
+    pushCandidate(item?.enclosureLink);
+
+    if (tempNode) {
+        tempNode.querySelectorAll('iframe, video').forEach(el => {
+            pushCandidate(el.getAttribute('src'));
+        });
+        tempNode.querySelectorAll('a[href]').forEach(el => {
+            pushCandidate(el.getAttribute('href'));
+        });
+    }
+
+    for (const raw of candidates) {
+        const embedUrl = convertUrlToEmbed(raw);
+        if (embedUrl) return embedUrl;
+    }
+    return null;
+}
+
+function convertUrlToEmbed(rawUrl) {
+    if (!rawUrl) return null;
+    const decoded = decodeHtmlEntities(String(rawUrl).trim());
+    if (!decoded) return null;
+
+    let parsed;
+    try {
+        parsed = new URL(decoded);
+    } catch (error) {
+        return null;
+    }
+
+    const host = parsed.hostname.toLowerCase();
+    const origin = parsed.origin;
+    const pathname = parsed.pathname;
+
+    if (host === 'youtu.be') {
+        const id = pathname.split('/').filter(Boolean)[0];
+        return id ? `https://www.youtube.com/embed/${id}` : null;
+    }
+
+    if (host.endsWith('youtube.com')) {
+        if (pathname.startsWith('/embed/')) {
+            return `${origin}${pathname}${parsed.search}`;
+        }
+        const shortsMatch = pathname.startsWith('/shorts/') ? pathname.split('/').filter(Boolean)[1] : null;
+        const videoId = parsed.searchParams.get('v') || shortsMatch;
+        return videoId ? `https://www.youtube.com/embed/${videoId}` : null;
+    }
+
+    if (INVIDIOUS_EMBED_HOSTS.some((allowed) => host === allowed || host.endsWith(`.${allowed}`))) {
+        if (pathname.startsWith('/embed/')) {
+            return `${origin}${pathname}${parsed.search}`;
+        }
+        const videoId = parsed.searchParams.get('v');
+        return videoId ? `${origin}/embed/${videoId}` : null;
     }
 
     return null;
@@ -4537,6 +4636,12 @@ function showError(message) {
 // ============================================================================
 // UTILITIES
 // ============================================================================
+
+function decodeHtmlEntities(text) {
+    if (!text || !HTML_ENTITY_PARSER) return text || '';
+    HTML_ENTITY_PARSER.innerHTML = text;
+    return HTML_ENTITY_PARSER.value;
+}
 
 function escapeHtml(text) {
     if (!text) return '';
