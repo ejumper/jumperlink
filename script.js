@@ -1304,7 +1304,7 @@ function updateTimeBasedBackground(now) {
         backgroundImage = 'backgrounds/night.jpg';
     } else if (hour >= 5 && hour < 8) {
         // 05:00 to 08:00 - Sunrise
-        backgroundImage = 'backgrounds/dawn.jpg';
+        backgroundImage = 'backgrounds/dawn.png';
     } else if (hour >= 8 && hour < 18) {
         // 08:00 to 18:00 - Day
         backgroundImage = 'backgrounds/day.jpg';
@@ -2641,7 +2641,7 @@ async function loadNextcloudFeed(folderId = null, options = {}) {
 
 function displayViewToggle() {
     const nextView = STATE.feedViewFilter === 'unviewed' ? 'all' : 'unviewed';
-    const label = STATE.feedViewFilter === 'unviewed' ? '🔵 New' : '⚫ New';
+    const label = STATE.feedViewFilter === 'unviewed' ? '🔵' : '⚫';
     const activeClass = STATE.feedViewFilter === 'unviewed' ? ' is-active' : '';
 
     return `
@@ -7231,7 +7231,7 @@ function playJellyfinVideo(item) {
                     ← Back to Bookmarks
                 </button>
                 <a href="${jellyfinUrl}" target="_blank" class="jellyfin-open-link" style="flex:1; min-width:160px; text-align:center;">
-                    Open in Jellyfin
+                    Jellyfin
                 </a>
             </div>
             <video controls autoplay playsinline preload="metadata" poster="${posterUrl}" crossorigin="anonymous">
@@ -7404,7 +7404,7 @@ async function displayJellyfinAlbum(item) {
                 </div>
                 <div style="text-align:center;">
                     <a href="${jellyfinUrl}" target="_blank" class="jellyfin-open-link" style="display:inline-block; margin-top:1rem; padding:0.5rem 1rem; background:#4a9eff; color:#fff; border-radius:6px; text-decoration:none;">
-                        Open in Jellyfin
+                        Jellyfin
                     </a>
                 </div>
             </div>
@@ -7540,7 +7540,7 @@ async function displayJellyfinArtist(item) {
                     ${description ? `<p style="color:#bbb; max-width:640px;">${escapeHtml(description)}</p>` : ''}
                     <div class="jellyfin-playback-controls">
                         <button class="jellyfin-control-button" data-action="shuffle-artist" ${albums.length ? '' : 'disabled'}>Shuffle All</button>
-                        <a href="${jellyfinUrl}" target="_blank" class="jellyfin-open-link" style="padding:0.65rem 1.4rem;">Open in Jellyfin</a>
+                        <a href="${jellyfinUrl}" target="_blank" class="jellyfin-open-link" style="padding:0.65rem 1.4rem;">Jellyfin</a>
                     </div>
                 </div>
                 <div>
@@ -7709,7 +7709,7 @@ async function displayJellyfinBook(item) {
             <div style="padding:1rem; text-align:center;">
                 <p>Unable to embed this book. Click below to open it in Jellyfin.</p>
                 <a href="${jellyfinUrl}" target="_blank" class="jellyfin-open-link" style="display:inline-block; padding:0.5rem 1rem; background:#4a9eff; color:#fff; border-radius:6px; text-decoration:none; margin-top:1rem;">
-                    Open in Jellyfin
+                    Jellyfin
                 </a>
             </div>
         `;

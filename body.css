@@ -858,7 +858,7 @@ text {
 
 .jellyfin-quick-panel {
     border: 2px solid var(--border-bookmark);
-    border-radius: 16px;
+    border-radius: 12px;
     padding: 0.4rem .75rem;
     background: hsla(240, 20%, 5%, 0.75);
     display: flex;
@@ -1277,7 +1277,7 @@ dock {
 }
 
 .timer-chip--add {
-    font-size: 1rem;
+    font-size: .5rem;
     width: 2.25rem;
     height: 2.25rem;
     border-radius: 50%;
@@ -1419,7 +1419,7 @@ dock {
 
 .timer-add-btn {
     flex: 0 0 auto;
-    padding: 0.5rem 1rem;
+    padding: 0.5rem .5rem;
     border-radius: 999px;
     border: 1px solid hsla(240, 100%, 75%, 0.6);
     background: linear-gradient(135deg, hsla(240, 100%, 74.71%, 0.3), hsla(240, 100%, 77.84%, 0.3));
@@ -1503,7 +1503,7 @@ dock {
 .timer-remaining {
     font-family: 'MonoLisa', 'Input', monospace;
     color: var(--timer-accent);
-    font-size: 1rem;
+    font-size: .5rem;
     text-shadow: 0 0 6px hsla(240, 100%, 74.71%, 0.3);
 }
 
@@ -1823,7 +1823,7 @@ dock {
 /* Icon-only folder buttons should be pill-shaped like text buttons */
 .folder-btn:has(> .folder-icon:only-child) {
     min-width: 10px;
-    padding: .1rem 1rem;
+    padding: .1rem .5rem;
 }
 
 .feed-footer {
@@ -1862,7 +1862,7 @@ dock {
 }
 
 .feed-load-more {
-    padding: 0.6rem 1.5rem;
+    padding: 0.5rem 1rem;
     background: var(--bg-primary);
     border: 2px solid hsl(240, 70%, 50%);
     border-radius: 999px;
@@ -1888,7 +1888,7 @@ dock {
     background: linear-gradient(0deg, hsla(240, 49%, 43%, 0.4) 0%, hsla(240, 46%, 26%, 0.2) 1.5%, hsla(240, 54%, 25%, 0.1) 5%, hsla(230, 59%, 18%, 0.1) 95%, hsla(230, 74%, 17%, 0.2) 97%, hsla(231, 67%, 22%, 0.4) 100%);
     border: 1px solid hsla(240, 100%, 74%, 0.25);
     border-radius: 12px;
-    padding: 0.85rem;
+    padding: 0.5rem;
     box-shadow: 0 0px 4px hsla(230, 100%, 14%, 0.5);
     backdrop-filter: blur(15px) saturate(120%);
     -webkit-backdrop-filter: blur(15px) saturate(120%);
@@ -2001,7 +2001,7 @@ dock {
 
 .feed-source-name {
     font-weight: 600;
-    font-size: 1rem;
+    font-size: .5rem;
 }
 
 .feed-meta-line {
@@ -2015,7 +2015,7 @@ dock {
 .feed-folder-pill {
     background: hsla(240, 100%, 50%, 0.18);
     color: hsl(240, 100%, 50%);
-    padding: 0.15rem 0.6rem;
+    padding: 0.15rem 0.5rem;
     border-radius: 999px;
     font-size: 0.8rem;
 }
@@ -2092,7 +2092,7 @@ dock {
 .bluesky-videos video,
 .lemmy-video-embed video {
     width: 100%;
-    border-radius: 16px;
+    border-radius: 12px;
     border: 1px solid hsla(240, 0%, 100%, 0.12);
     background: hsla(240, 0%, 0%, 0.4);
 }
@@ -2103,7 +2103,7 @@ dock {
 
 .bluesky-quote {
     margin-top: 0.65rem;
-    padding: 0.65rem 0.85rem;
+    padding: 0.5rem 0.rem;
     border-radius: 14px;
     border: 1px solid hsla(240, 100%, 79.02%, 0.25);
     background: hsla(240, 100%, 64.51%, 0.08);
@@ -2131,7 +2131,7 @@ dock {
     display: flex;
     gap: 0.65rem;
     border-radius: 14px;
-    padding: 0.65rem;
+    padding: 0.5rem;
     border: 1px solid hsla(240, 0%, 100%, 0.12);
     background: hsla(240, 56.52%, 9.02%, 0.6);
     text-decoration: none;
@@ -2173,8 +2173,8 @@ dock {
 
 .bluesky-quote-card {
     display: block;
-    border-radius: 16px;
-    padding: 0.8rem;
+    border-radius: 12px;
+    padding: 0.5rem;
     border: 1px solid hsla(240, 100%, 79.02%, 0.3);
     background: hsla(240, 54.72%, 10.39%, 0.7);
     color: inherit;
@@ -2248,7 +2248,7 @@ dock {
 
 .bluesky-video video {
     width: 100%;
-    border-radius: 16px;
+    border-radius: 12px;
     border: 1px solid hsla(240, 0%, 100%, 0.12);
     background: hsla(240, 0%, 0%, 0.4);
 }
@@ -2300,7 +2300,7 @@ dock {
 
 .feed-media-link {
     display: block;
-    padding: 0.75rem;
+    padding: 0.7rem;
     text-align: center;
     color: grey;
     font-weight: 600;
@@ -2386,7 +2386,7 @@ dock {
     margin-top: 0.75rem;
     display: flex;
     flex-wrap: wrap;
-    gap: 1rem;
+    gap: .5rem;
     font-size: 0.9rem;
     color: gray;
 }
@@ -2594,7 +2594,7 @@ text table {
     border: 1px solid #888 !important;
     border-collapse: collapse !important;
     background: transparent !important;
-    margin: 1rem 0;
+    margin: .5rem 0;
 }
 
 text td,
@@ -2658,7 +2658,7 @@ overview img {
     max-width: 100%;
     height: auto;
     display: block;
-    margin: 0 auto 1rem;
+    margin: 0 auto .5rem;
     border-radius: 4px;
     border: 1px solid #888;
 }
@@ -2678,15 +2678,15 @@ overview img {
 
 .wiki-toc-container,
 .wiki-infobox-container {
-    padding: 1rem;
+    padding: .5rem;
 }
 
 .wiki-article {
     background: hsla(240, 50%, 4.71%, 0.2);
     backdrop-filter: blur(20px) saturate(125%);
     -webkit-backdrop-filter: blur(20px) saturate(125%);
-    padding: 1.5rem;
-    border-radius: 16px;
+    padding: 1rem;
+    border-radius: 12px;
     border: 1px solid hsla(240, 100%, 75%, 0.3);
     box-shadow: 0 30px 45px hsla(240, 0%, 0%, 0.45);
 }
@@ -2695,7 +2695,7 @@ overview img {
     background: transparent !important;
     border-radius: 10px;
     border: 1px solid hsla(240, 0%, 100%, 0.08);
-    padding: 0.75rem;
+    padding: 0.5rem;
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     
@@ -2728,7 +2728,7 @@ overview img {
     .wiki-article {
         max-height: 35vh;
         overflow-y: auto;
-        padding: 1rem;
+        padding: .5rem;
     }
 
     .wiki-article::-webkit-scrollbar {
@@ -2772,7 +2772,7 @@ dock a.nav-highlight {
     width: 100%;
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: .5rem;
     align-items: center;
 }
 
@@ -2843,7 +2843,7 @@ dock a.nav-highlight {
     flex-direction: column;
     gap: 0.3rem;
     min-width: 0;
-    padding: 0.5rem 0.75rem 0.25rem 0.75rem;
+    padding: 0.5rem 0.5rem 0.3rem 0.5rem;
 }
 
 .jellyfin-mini-meta {
@@ -2904,7 +2904,7 @@ dock a.nav-highlight {
 
 .jellyfin-mini-controls {
     display: flex;
-    gap: 0.4rem;
+    gap: 0.1rem;
     flex-wrap: wrap;
     align-items: center;
     flex-shrink: 0;
@@ -2913,8 +2913,8 @@ dock a.nav-highlight {
 .jellyfin-mini-control {
     border: none;
     border-radius: 50%;
-    width: 34px;
-    height: 34px;
+    width: 30px;
+    height: 30px;
     font-size: 1rem;
     line-height: 1;
     background: hsla(240, 20%, 12%, 0.85);
@@ -3001,15 +3001,16 @@ dock a.nav-highlight {
 
     .jellyfin-mini-art {
         width: 100%;
-        height: 140px;
-        grid-row: 1;
-        grid-column: 1;
+        height: 130px;
+        grid-row: 2;
+        grid-column: 2;
+        border-radius: 12px;
     }
 
     .jellyfin-mini-main {
         grid-row: 2;
         grid-column: 1;
-        padding: 0.5rem 0.75rem;
+        padding: 0.1rem 0.3rem;
     }
 
     .jellyfin-mini-controls {
@@ -3019,7 +3020,7 @@ dock a.nav-highlight {
 
     .jellyfin-mini-title-row {
         flex-direction: column;
-        gap: 0.25rem;
+        gap: 0.1rem;
         text-align: center;
     }
 
@@ -3029,7 +3030,7 @@ dock a.nav-highlight {
     }
 
     .jellyfin-mini-time {
-        left: 0.5rem;
+        left: 0rem;
         bottom: 0.25rem;
     }
 }
@@ -3037,12 +3038,12 @@ dock a.nav-highlight {
 .jellyfin-library-panel {
     background: hsla(240, 20%, 5%, 0.7);
     border: 1px solid var(--border-secondary);
-    border-radius: 16px;
-    padding: 1rem;
+    border-radius: 12px;
+    padding: .5rem;
     box-shadow: 0 20px 45px rgba(0, 0, 0, 0.3);
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: .5rem;
 }
 
 .jellyfin-library-panel-header {
@@ -3050,20 +3051,20 @@ dock a.nav-highlight {
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 0.75rem;
+    gap: 0.7rem;
 }
 
 .jellyfin-library-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 0.75rem;
+    gap: 0.7rem;
 }
 
 .jellyfin-library-card {
     border: 1px solid var(--border-secondary);
     border-radius: 12px;
     background: hsla(240, 25%, 8%, 0.85);
-    padding: 0.65rem;
+    padding: 0.5rem;
     display: flex;
     flex-direction: column;
     gap: 0.4rem;
@@ -3103,7 +3104,7 @@ dock a.nav-highlight {
     background: hsla(240, 20%, 10%, 0.8);
     border: 1px solid var(--border-secondary);
     border-radius: 10px;
-    padding: 0.5rem 0.8rem;
+    padding: 0.5rem 0.7rem;
     color: var(--text-primary);
     cursor: pointer;
     transition: background 0.15s ease, transform 0.1s ease;
@@ -3130,7 +3131,7 @@ dock a.nav-highlight {
 .jellyfin-tv-episodes {
     border: 1px solid var(--border-secondary);
     border-radius: 12px;
-    padding: 0.75rem;
+    padding: 0.7rem;
     background: hsla(240, 20%, 8%, 0.7);
     min-height: 150px;
 }
@@ -3148,10 +3149,12 @@ dock a.nav-highlight {
 
 .jellyfin-open-link {
     transition: background 0.2s ease, transform 0.2s ease;
+    align-self: center;
+
 }
 
 .jellyfin-open-link:hover {
-    background: hsl(240, 100%, 68%) !important;
+    border: 1px solid hsl(240, 100%, 68%) !important;
     transform: translateY(-1px);
     box-shadow: 0 4px 12px rgba(74, 158, 255, 0.3);
 }
@@ -3160,13 +3163,13 @@ dock a.nav-highlight {
     transition: background 0.2s ease;
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: .5rem;
     width: 100%;
     background: transparent;
     border: none;
     color: inherit;
     text-align: left;
-    padding: 0.75rem 1rem;
+    padding: 0.7rem .5rem;
     border-bottom: 1px solid var(--border-secondary);
     cursor: pointer;
     font: inherit;
@@ -3224,19 +3227,17 @@ dock a.nav-highlight {
 .jellyfin-close-player,
 .jellyfin-back-button {
     transition: background 0.2s ease, transform 0.2s ease;
-    padding: 0.5rem 1rem;
-    background: #333;
+    padding: 0.1rem .1rem;
+    background: transparent;
     color: #fff;
     border: none;
-    border-radius: 6px;
     cursor: pointer;
-    margin-bottom: 1rem;
     display: inline-block;
 }
 
 .jellyfin-close-player:hover,
 .jellyfin-back-button:hover {
-    background: #444 !important;
+    background: #44444400 !important;
     transform: translateY(-1px);
 }
 
@@ -3251,7 +3252,7 @@ dock a.nav-highlight {
 .jellyfin-album-hero {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: .5rem;
     align-items: center;
     text-align: center;
 }
@@ -3315,7 +3316,7 @@ dock a.nav-highlight {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 1rem;
+    gap: .5rem;
     text-align: center;
 }
 
@@ -3331,7 +3332,7 @@ dock a.nav-highlight {
 .jellyfin-artist-albums {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 1rem;
+    gap: .5rem;
 }
 
 .jellyfin-artist-album {
@@ -3360,7 +3361,7 @@ dock a.nav-highlight {
 .jellyfin-empty-state {
     text-align: center;
     color: var(--text-muted);
-    padding: 2rem 1rem;
+    padding: 2rem .5rem;
 }
 
 .jellyfin-book-viewer {
@@ -3368,7 +3369,7 @@ dock a.nav-highlight {
     margin: 0 auto;
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: .5rem;
 }
 
 .jellyfin-book-toolbar {
@@ -3437,7 +3438,7 @@ dock a.nav-highlight {
 .empty-state,
 .error-message,
 .info-message {
-    padding: 1rem;
+    padding: .5rem;
     text-align: center;
 }
 
@@ -3478,7 +3479,7 @@ dock a.nav-highlight {
 
 /* Common spacing utilities */
 .p-1 {
-    padding: 1rem;
+    padding: .5rem;
 }
 
 .p-half {
@@ -3486,11 +3487,11 @@ dock a.nav-highlight {
 }
 
 .mt-1 {
-    margin-top: 1rem;
+    margin-top: .5rem;
 }
 
 .mb-1 {
-    margin-bottom: 1rem;
+    margin-bottom: .5rem;
 }
 
 .gap-half {
