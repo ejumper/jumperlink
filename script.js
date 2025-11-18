@@ -18,15 +18,25 @@ const CONFIG = {
     NEXTCLOUD_PASS: 'J5Lc7-oRQa7-2pyX5-Xdm53-8ERan',
     NEXTCLOUD_TASKS_CALENDAR_PATH: '/remote.php/dav/calendars/admin/personal/', // Update to your tasks calendar
 
+    // Jellyfin Configuration
+    JELLYFIN_SERVER: 'https://media.jumperlink.net',
+    JELLYFIN_API_KEY: 'bebdf1595a4343a5ab3cbf79f059af6f',
+    JELLYFIN_CLIENT_NAME: 'Jumperlink Dashboard',
+    JELLYFIN_DEVICE_ID: 'jumperlink-web-dashboard',
+    JELLYFIN_VERSION: '1.0.0',
+    JELLYFIN_USER_ID: 'YOUR_JELLYFIN_USER_ID',
+    JELLYFIN_CLASSIC_CHANNEL_ID: 'YOUR_CLASSIC_MOVIES_CHANNEL_ID',
+    JELLYFIN_HUMOR_CHANNEL_ID: 'YOUR_HUMOR_HUB_CHANNEL_ID',
+
     // API Endpoints
     WIKI_API: 'https://en.wikipedia.org/w/api.php',
     OPENROUTER_API: 'https://openrouter.ai/api/v1/chat/completions',
     TRAKT_API: 'https://api.trakt.tv',
 
     // Settings
-    INITIAL_FEED_ITEMS: 20, // Initial feed load
-    FEED_ITEMS_PER_PAGE: 20, // Items per page when viewing all articles
-    SUGGESTION_LIMIT: { wikipedia: 5, bookmarks: 5, trakt: 5 },
+    INITIAL_FEED_ITEMS: 50, // Initial feed load
+    FEED_ITEMS_PER_PAGE: 50, // Items per page when viewing all articles
+    SUGGESTION_LIMIT: { wikipedia: 5, bookmarks: 5, trakt: 5, jellyfin: 10 },
     DEBOUNCE_MS: 300,
     UPDATE_TIME_INTERVAL: 1000, // Update clock every second
     SHOW_POST_CONTENT: true, // Show post content in cards
@@ -40,7 +50,8 @@ const LOCAL_STORAGE_KEYS = {
     readItems: 'jumperlink_read_items',
     readSyncQueue: 'jumperlink_read_sync_queue',
     timerMetadata: 'jumperlink_timer_metadata',
-    localIntervalTimers: 'jumperlink_local_interval_timers'
+    localIntervalTimers: 'jumperlink_local_interval_timers',
+    jellyfinBookBookmarks: 'jumperlink_jellyfin_bookmarks'
 };
 
 const FALLBACK_FAVICON = 'icons/web.webp';
@@ -72,6 +83,20 @@ function createTimerDraft() {
             minutes: '',
             seconds: ''
         }
+    };
+}
+
+function createJellyfinPlaybackState() {
+    return {
+        queue: [],
+        currentIndex: -1,
+        repeatOne: false,
+        context: null,
+        mountSelector: null,
+        albumId: null,
+        albumTitle: '',
+        sourceItem: null,
+        isFavorite: false
     };
 }
 
@@ -113,12 +138,28 @@ const STATE = {
     feedHasMore: true,
     feedLoading: false,
     pendingStarToggles: new Set(),
+    clockIntervalId: null, // Track clock interval to prevent memory leaks
 
     // Keyboard navigation state
     navigationMode: null, // null, 'search', 'bookmarks', 'applinks', 'feed'
     navigationIndex: -1, // Current index in the navigable items
-    navigationItems: [] // Current list of navigable items
+    navigationItems: [], // Current list of navigable items
+    appLinksMarkup: '',
+    jellyfinPlayback: createJellyfinPlaybackState(),
+    jellyfinBookBookmarks: new Map()
 };
+
+const JELLYFIN_QUICK_ACTIONS = [
+    { emoji: '💽', action: 'albums', label: 'Music Albums' },
+    { emoji: '🎨', action: 'artists', label: 'Artists' },
+    { emoji: '📋', action: 'playlists', label: 'Playlists' },
+    { emoji: '⭐', action: 'favorites', label: 'Shuffle Favorites' },
+    { emoji: '🔀', action: 'shuffle', label: 'Shuffle Library' },
+    { emoji: '🍿', action: 'classic-channel', label: 'Classic Movies' },
+    { emoji: '😂', action: 'humor-channel', label: 'Humor Hub' },
+    { emoji: '🎬', action: 'movies', label: 'Movies' },
+    { emoji: '📺', action: 'tv', label: 'TV Shows' }
+];
 
 function normalizeTimerMetadataEntry(entry) {
     if (!entry || typeof entry !== 'object') {
@@ -191,6 +232,46 @@ function deleteTimerMetadata(timerId) {
         persistTimerMetadata();
     }
     STATE.autoRepeatQueue.delete(timerId);
+}
+
+function loadJellyfinBookBookmarks() {
+    try {
+        const raw = localStorage.getItem(LOCAL_STORAGE_KEYS.jellyfinBookBookmarks);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+            STATE.jellyfinBookBookmarks = new Map(
+                Object.entries(parsed).map(([key, value]) => [key, Number(value) || 1])
+            );
+        }
+    } catch (error) {
+        console.warn('Unable to load Jellyfin book bookmarks', error);
+        STATE.jellyfinBookBookmarks = new Map();
+    }
+}
+
+function persistJellyfinBookBookmarks() {
+    try {
+        const plain = {};
+        STATE.jellyfinBookBookmarks.forEach((value, key) => {
+            plain[key] = value;
+        });
+        localStorage.setItem(LOCAL_STORAGE_KEYS.jellyfinBookBookmarks, JSON.stringify(plain));
+    } catch (error) {
+        console.warn('Unable to persist Jellyfin book bookmarks', error);
+    }
+}
+
+function getJellyfinBookBookmark(bookId) {
+    if (!bookId) return null;
+    return STATE.jellyfinBookBookmarks.get(bookId) || null;
+}
+
+function setJellyfinBookBookmark(bookId, page) {
+    if (!bookId) return;
+    const safePage = Math.max(1, Number(page) || 1);
+    STATE.jellyfinBookBookmarks.set(bookId, safePage);
+    persistJellyfinBookBookmarks();
 }
 
 function updateTimerDraft(partial = {}) {
@@ -592,6 +673,7 @@ const DOM = {
     pageTitle: document.querySelector('page-title'),
     pageTitleText: document.querySelector('.page-title-display p'),
     subtitle: document.querySelector('subtitle'),
+    headerTimers: document.querySelector('.header-active-bar'),
     overview: document.querySelector('overview'),
     text: document.querySelector('text'),
     dock: document.querySelector('dock'),
@@ -616,8 +698,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     initializeLocalReadTracking();
     loadTimerMetadata();
+    loadJellyfinBookBookmarks();
     loadLocalIntervalTimers();
     initTaskModal();
+
+    // Auto-detect Jellyfin user ID from API key
+    await autoDetectJellyfinUserId();
 
     // Load initial data
     await Promise.all([
@@ -828,6 +914,18 @@ function handleGlobalKeydown(e) {
                 }
             }
             break;
+        case 'f': {
+            const videoEl = getJellyfinVideoElement();
+            if (!videoEl) break;
+            const isVideoFullscreen = document.fullscreenElement === videoEl;
+            if ((isInputFocused || isTargetInput || activeIsSearch || targetIsSearch) && !isVideoFullscreen) {
+                break;
+            }
+            if (toggleJellyfinVideoFullscreen()) {
+                e.preventDefault();
+            }
+            break;
+        }
     }
 }
 
@@ -1136,9 +1234,12 @@ function updateURL(params, replaceState = false) {
 async function loadHomeMode() {
     STATE.mode = 'home';
 
-    // Start clock
+    // Start clock (clear any existing interval to prevent memory leaks)
+    if (STATE.clockIntervalId) {
+        clearInterval(STATE.clockIntervalId);
+    }
     updateClock();
-    setInterval(updateClock, CONFIG.UPDATE_TIME_INTERVAL);
+    STATE.clockIntervalId = setInterval(updateClock, CONFIG.UPDATE_TIME_INTERVAL);
 
     // Load Nextcloud folders, feeds, and items
     await loadNextcloudFolders();
@@ -1222,23 +1323,24 @@ function updateTimeBasedBackground(now) {
 function ensureClockToggle() {
     if (DOM.clockToggle) return;
 
-    const target = DOM.pageTitleText || DOM.pageTitle;
-    if (!target) return;
+    // Only manipulate the display area, not the entire page-title element
+    // to avoid destroying the search input
+    const displayElement = document.querySelector('.page-title-display p');
+    if (!displayElement) return;
 
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'clock-toggle';
     button.addEventListener('click', handleClockToggle);
 
-    if (DOM.pageTitleText) {
-        DOM.pageTitleText.innerHTML = '';
-        DOM.pageTitleText.appendChild(button);
-    } else if (DOM.pageTitle) {
-        DOM.pageTitle.innerHTML = '';
-        DOM.pageTitle.appendChild(button);
-    }
+    // Clear and insert the button into the display paragraph
+    displayElement.innerHTML = '';
+    displayElement.appendChild(button);
 
+    // Update the DOM cache reference
     DOM.clockToggle = button;
+    DOM.pageTitleText = displayElement;
+
     syncTimerPanelState();
 }
 
@@ -1476,6 +1578,8 @@ function updateTimerCountdowns() {
             }
         }
     });
+
+    updateHeaderActiveTimers();
 }
 
 function renderTimerLists() {
@@ -1584,6 +1688,7 @@ function renderTimerLists() {
     setTimerActiveTab(STATE.timerActiveTab || 'active');
     updateTimerCountdowns();
     syncTimerPanelState();
+    updateHeaderActiveTimers();
 }
 
 function renderTimerRow(timer, now, isFinishing) {
@@ -1792,6 +1897,20 @@ function formatRemaining(ms) {
 
 function formatDuration(ms) {
     return formatRemaining(ms);
+}
+
+function formatHeaderRemaining(ms) {
+    if (!Number.isFinite(ms)) return '--';
+    const totalSeconds = Math.floor(ms / 1000);
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+
+    const parts = [];
+    if (days > 0) parts.push(`${days}d`);
+    if (hours > 0 || days > 0) parts.push(`${hours}h`);
+    parts.push(`${minutes}m`);
+    return parts.join(' ');
 }
 
 const TIMER_INTERVAL_COLORS = [
@@ -2427,7 +2546,7 @@ async function loadNextcloudFeed(folderId = null, options = {}) {
             DOM.overview.innerHTML = timerHTML;
             attachTimerControlHandlers();
         } else {
-            const placeholder = '<p style="padding:1rem;"><em>Configure Nextcloud credentials to see your news feed</em></p>';
+            const placeholder = '<p class="empty-state">Configure Nextcloud credentials to see your news feed</p>';
             DOM.overview.innerHTML = placeholder + getFeedControlsHTML();
             attachViewToggleHandlers();
             attachFolderClickHandlers();
@@ -2508,7 +2627,7 @@ async function loadNextcloudFeed(folderId = null, options = {}) {
             DOM.overview.innerHTML = timerHTML;
             attachTimerControlHandlers();
         } else {
-            const message = '<p style="padding:1rem;"><em>Unable to load news feed</em></p>';
+            const message = '<p class="empty-state">Unable to load news feed</p>';
             DOM.overview.innerHTML = message + getFeedControlsHTML();
             attachViewToggleHandlers();
             attachFolderClickHandlers();
@@ -2694,7 +2813,7 @@ function displayFolderMenu() {
                 All
             </button>
             <button class="folder-btn folder-btn--starred ${starActive ? 'active' : ''}" data-folder-starred="true" title="Starred items">
-                <img src="icons/${starActive ? 'starred' : 'unstarred'}.png" alt="Starred items" class="folder-icon folder-icon--star">
+                <img src="icons/${starActive ? 'starred-folder' : 'starred-folder'}.svg" alt="Starred items" class="folder-icon folder-icon--star">
             </button>
             ${STATE.folders.map(folder => {
                 const isActive = STATE.selectedFolder === folder.id;
@@ -2756,10 +2875,14 @@ function displayFeed() {
 
     if (!items || items.length === 0) {
         const message = STATE.feedViewFilter === 'all'
-            ? '<p style="padding:1rem;"><em>No items to display</em></p>'
-            : '<p style="padding:1rem;"><em>No unread items</em></p>';
+            ? '<p class="empty-state">No items to display</p>'
+            : '<p class="empty-state">No unread items</p>';
         const footerHTML = getFeedFooterHTML();
-        DOM.overview.innerHTML = message + footerHTML + controlsHTML;
+        // Preserve the header-active-bar when updating overview
+        const timerBarHTML = '<div class="header-active-bar" aria-live="polite" aria-label="Active timers"></div>';
+        DOM.overview.innerHTML = timerBarHTML + message + footerHTML + controlsHTML;
+        // Update DOM cache reference to the new timer bar element
+        DOM.headerTimers = document.querySelector('.header-active-bar');
         attachViewToggleHandlers();
         attachFolderClickHandlers();
         attachRefreshHandler();
@@ -2782,7 +2905,11 @@ function displayFeed() {
         ${footerHTML}
     `;
 
-    DOM.overview.innerHTML = feedHTML + controlsHTML;
+    // Preserve the header-active-bar when updating overview
+    const timerBarHTML = '<div class="header-active-bar" aria-live="polite" aria-label="Active timers"></div>';
+    DOM.overview.innerHTML = timerBarHTML + feedHTML + controlsHTML;
+    // Update DOM cache reference to the new timer bar element
+    DOM.headerTimers = document.querySelector('.header-active-bar');
     renderTimerLists();
     attachViewToggleHandlers();
     attachFolderClickHandlers();
@@ -3294,6 +3421,37 @@ function safeHostname(url) {
     } catch (error) {
         return '';
     }
+}
+
+function collectHeaderTimers(now) {
+    const finishingIds = STATE.finishingTimers || new Set();
+    return (STATE.timers || [])
+        .filter(timer => timer && (timer.state !== 'finished' || finishingIds.has(timer.id)))
+        .map(timer => ({
+            id: timer.id,
+            label: timer.label || 'Timer',
+            remaining: remainingMs(timer, now)
+        }))
+        .filter(entry => Number.isFinite(entry.remaining))
+        .sort((a, b) => a.remaining - b.remaining)
+        .slice(0, 4);
+}
+
+function updateHeaderActiveTimers() {
+    const container = DOM.headerTimers;
+    if (!container) return;
+    const now = Date.now();
+    const timers = collectHeaderTimers(now);
+    if (!timers.length) {
+        container.innerHTML = '';
+        return;
+    }
+    container.innerHTML = timers.map(timer => `
+        <div class="header-timer" data-header-timer-id="${timer.id}">
+            <div class="header-timer-name">${escapeHtml(timer.label)}</div>
+            <div class="header-timer-remaining">${escapeHtml(formatHeaderRemaining(timer.remaining))}</div>
+        </div>
+    `).join('');
 }
 
 function createFeedCard(item) {
@@ -4080,7 +4238,10 @@ async function loadAppLinks() {
 function displayAppLinks() {
     if (!STATE.appLinks || STATE.appLinks.length === 0) {
         console.warn('[App Links] No app links to display');
-        DOM.dock.innerHTML = '<div style="padding:1rem; color:#888;">No app links configured</div>';
+        STATE.appLinksMarkup = '<div style="padding:1rem; color:#888;">No app links configured</div>';
+        if (DOM.dock) {
+            DOM.dock.innerHTML = STATE.appLinksMarkup;
+        }
         return;
     }
 
@@ -4120,7 +4281,21 @@ function displayAppLinks() {
     }).join('');
 
     // Display app links in dock with horizontal scrolling
-    DOM.dock.innerHTML = `<div class="app-links-horizontal">${linksHTML}</div>`;
+    STATE.appLinksMarkup = `<div class="app-links-horizontal">${linksHTML}</div>`;
+    if (DOM.dock) {
+        DOM.dock.innerHTML = STATE.appLinksMarkup;
+    }
+}
+
+function showDefaultDock() {
+    if (!DOM.dock) return;
+    if (STATE.appLinksMarkup) {
+        DOM.dock.innerHTML = STATE.appLinksMarkup;
+    } else if (STATE.appLinks && STATE.appLinks.length > 0) {
+        displayAppLinks();
+    } else {
+        DOM.dock.innerHTML = '<div style="padding:1rem; color:#888;">No app links configured</div>';
+    }
 }
 
 async function loadBookmarks() {
@@ -4252,8 +4427,607 @@ function displayBookmarksTree() {
 
     console.log('[Bookmarks] Generated HTML length:', treeHTML.length);
 
-    // Put bookmarks tree in text area for home mode
-    DOM.text.innerHTML = treeHTML;
+    renderJellyfinHomeContent(treeHTML);
+}
+
+function buildJellyfinQuickPanel() {
+    const buttons = JELLYFIN_QUICK_ACTIONS.map(action => `
+        <button class="jellyfin-quick-button"
+                data-jellyfin-action="${action.action}"
+                title="${escapeHtml(action.label)}"
+                aria-label="${escapeHtml(action.label)}">
+            ${action.emoji}
+        </button>
+    `).join('');
+    return `<div class="jellyfin-quick-panel">${buttons}</div>`;
+}
+
+function renderJellyfinHomeContent(mainContentHtml, options = {}) {
+    const showBackButton = options.showBackButton || false;
+    const quickPanelHTML = buildJellyfinQuickPanel();
+    const backButtonHTML = showBackButton ? `
+        <button class="jellyfin-back-button" onclick="displayBookmarksTree()">
+            ← Back to Bookmarks
+        </button>
+    ` : '';
+    DOM.text.innerHTML = `
+        <div class="jellyfin-home-panels">
+            ${quickPanelHTML}
+            <div class="jellyfin-home-main">
+                ${backButtonHTML}
+                ${mainContentHtml}
+            </div>
+        </div>
+    `;
+    setupJellyfinQuickActions();
+}
+
+function setupJellyfinQuickActions() {
+    const panel = DOM.text.querySelector('.jellyfin-quick-panel');
+    if (!panel) return;
+    panel.querySelectorAll('[data-jellyfin-action]').forEach(button => {
+        button.addEventListener('click', () => {
+            const action = button.dataset.jellyfinAction;
+            handleJellyfinQuickAction(action);
+        });
+    });
+}
+
+function handleJellyfinQuickAction(action) {
+    switch (action) {
+        case 'albums':
+            showJellyfinAlbumList();
+            break;
+        case 'artists':
+            showJellyfinArtistList();
+            break;
+        case 'playlists':
+            showJellyfinPlaylistList();
+            break;
+        case 'favorites':
+            shuffleJellyfinFavorites(); // Changed to shuffle instead of showing list
+            break;
+        case 'shuffle':
+            shuffleAllJellyfinMusic();
+            break;
+        case 'classic-channel':
+            playJellyfinChannel('classic');
+            break;
+        case 'humor-channel':
+            playJellyfinChannel('humor');
+            break;
+        case 'movies':
+            showJellyfinMovieList();
+            break;
+        case 'tv':
+            showJellyfinTvList();
+            break;
+        default:
+            console.warn('[Jellyfin] Unknown quick action:', action);
+    }
+}
+
+function renderJellyfinLibraryLoading(title) {
+    renderJellyfinHomeContent(`
+        <div class="jellyfin-library-panel">
+            <div class="jellyfin-library-panel-header">
+                <button class="jellyfin-control-button" data-action="jellyfin-library-home">← Bookmarks</button>
+                <h2>${escapeHtml(title)}</h2>
+            </div>
+            <p>Loading…</p>
+        </div>
+    `);
+    const backBtn = DOM.text.querySelector('[data-action="jellyfin-library-home"]');
+    if (backBtn) {
+        backBtn.addEventListener('click', displayBookmarksTree);
+    }
+}
+
+function renderJellyfinLibraryCards(title, items, { emptyMessage = 'No items found', onSelect, subtitleExtractor } = {}) {
+    if (!items || items.length === 0) {
+        renderJellyfinHomeContent(`
+            <div class="jellyfin-library-panel">
+                <div class="jellyfin-library-panel-header">
+                    <button class="jellyfin-control-button" data-action="jellyfin-library-home">← Bookmarks</button>
+                    <h2>${escapeHtml(title)}</h2>
+                </div>
+                <p>${escapeHtml(emptyMessage)}</p>
+            </div>
+        `);
+        const backBtn = DOM.text.querySelector('[data-action="jellyfin-library-home"]');
+        if (backBtn) backBtn.addEventListener('click', displayBookmarksTree);
+        return;
+    }
+
+    const cardsHTML = items.map((item, index) => {
+        const imageUrl = getJellyfinImageUrl(item.Id, { maxWidth: 300 });
+        const subtitle = subtitleExtractor ? subtitleExtractor(item) : '';
+        return `
+            <button class="jellyfin-library-card" data-library-index="${index}">
+                <img src="${imageUrl}" alt="${escapeHtml(item.Name || item.Title || '')}" onerror="this.style.visibility='hidden'">
+                <span>${escapeHtml(item.Name || item.Title || 'Untitled')}</span>
+                ${subtitle ? `<small>${escapeHtml(subtitle)}</small>` : ''}
+            </button>
+        `;
+    }).join('');
+
+    const content = `
+        <div class="jellyfin-library-panel">
+            <div class="jellyfin-library-panel-header">
+                <button class="jellyfin-control-button" data-action="jellyfin-library-home">← Bookmarks</button>
+                <h2>${escapeHtml(title)}</h2>
+            </div>
+            <div class="jellyfin-library-grid">
+                ${cardsHTML}
+            </div>
+        </div>
+    `;
+
+    renderJellyfinHomeContent(content);
+
+    const panel = DOM.text.querySelector('.jellyfin-library-panel');
+    if (!panel) return;
+    const backBtn = panel.querySelector('[data-action="jellyfin-library-home"]');
+    if (backBtn) {
+        backBtn.addEventListener('click', displayBookmarksTree);
+    }
+    if (typeof onSelect === 'function') {
+        panel.querySelectorAll('[data-library-index]').forEach(card => {
+            const index = Number(card.dataset.libraryIndex);
+            card.addEventListener('click', () => {
+                onSelect(items[index]);
+            });
+        });
+    }
+}
+
+function renderJellyfinTrackList(title, tracks, { emptyMessage = 'No tracks found', onSelect } = {}) {
+    if (!tracks || tracks.length === 0) {
+        renderJellyfinHomeContent(`
+            <div class="jellyfin-library-panel">
+                <div class="jellyfin-library-panel-header">
+                    <button class="jellyfin-control-button" data-action="jellyfin-library-home">← Bookmarks</button>
+                    <h2>${escapeHtml(title)}</h2>
+                </div>
+                <p>${escapeHtml(emptyMessage)}</p>
+            </div>
+        `);
+        const backBtn = DOM.text.querySelector('[data-action="jellyfin-library-home"]');
+        if (backBtn) backBtn.addEventListener('click', displayBookmarksTree);
+        return;
+    }
+
+    const rows = tracks.map((track, index) => {
+        const artist = track.Artists && track.Artists.length ? track.Artists.join(', ') : track.AlbumArtist || '';
+        const album = track.Album || '';
+        return `
+            <button class="jellyfin-control-button jellyfin-library-track" data-library-index="${index}">
+                <span>
+                    <strong>${escapeHtml(track.Name || track.Title || 'Untitled')}</strong>
+                    ${artist ? `<div class="jellyfin-tv-episode-meta">${escapeHtml(artist)}</div>` : ''}
+                </span>
+                ${album ? `<span class="jellyfin-tv-episode-meta">${escapeHtml(album)}</span>` : ''}
+            </button>
+        `;
+    }).join('');
+
+    renderJellyfinHomeContent(`
+        <div class="jellyfin-library-panel">
+            <div class="jellyfin-library-panel-header">
+                <button class="jellyfin-control-button" data-action="jellyfin-library-home">← Bookmarks</button>
+                <h2>${escapeHtml(title)}</h2>
+            </div>
+            <div class="jellyfin-library-list">
+                ${rows}
+            </div>
+        </div>
+    `);
+
+    const panel = DOM.text.querySelector('.jellyfin-library-panel');
+    if (!panel) return;
+    const backBtn = panel.querySelector('[data-action="jellyfin-library-home"]');
+    if (backBtn) backBtn.addEventListener('click', displayBookmarksTree);
+    if (typeof onSelect === 'function') {
+        panel.querySelectorAll('[data-library-index]').forEach(row => {
+            const idx = Number(row.dataset.libraryIndex);
+            row.addEventListener('click', () => onSelect(tracks[idx]));
+        });
+    }
+}
+
+async function showJellyfinMovieList() {
+    try {
+        renderJellyfinLibraryLoading('Movies');
+        const params = new URLSearchParams({
+            IncludeItemTypes: 'Movie',
+            Recursive: 'true',
+            SortBy: 'ProductionYear,SortName',
+            Fields: 'Overview,ProductionYear',
+            Limit: '200'
+        });
+        const movies = await fetchJellyfinItemsFromParams(params);
+        renderJellyfinLibraryCards('Movies', movies, {
+            emptyMessage: 'No movies found',
+            onSelect: movie => {
+                playJellyfinVideo({
+                    type: 'jellyfin',
+                    jellyfinType: 'Movie',
+                    jellyfinId: movie.Id,
+                    title: movie.Name,
+                    description: movie.Overview || ''
+                });
+            },
+            subtitleExtractor: movie => movie.ProductionYear ? `${movie.ProductionYear}` : ''
+        });
+    } catch (error) {
+        console.error('[Jellyfin] Unable to load movies:', error);
+        renderJellyfinHomeContent(`<div class="jellyfin-library-panel"><p>Failed to load movies.</p></div>`);
+    }
+}
+
+async function showJellyfinTvList() {
+    try {
+        renderJellyfinLibraryLoading('TV Shows');
+        const params = new URLSearchParams({
+            IncludeItemTypes: 'Series',
+            Recursive: 'true',
+            SortBy: 'SortName',
+            Fields: 'Overview,ProductionYear',
+            Limit: '200'
+        });
+        const shows = await fetchJellyfinItemsFromParams(params);
+        renderJellyfinLibraryCards('TV Shows', shows, {
+            emptyMessage: 'No TV shows found',
+            onSelect: show => displayJellyfinTvShow(show),
+            subtitleExtractor: show => show.ProductionYear ? `${show.ProductionYear}` : ''
+        });
+    } catch (error) {
+        console.error('[Jellyfin] Unable to load TV shows:', error);
+        renderJellyfinHomeContent(`<div class="jellyfin-library-panel"><p>Failed to load TV shows.</p></div>`);
+    }
+}
+
+async function displayJellyfinTvShow(show) {
+    renderJellyfinLibraryLoading(show.Name || 'TV Show');
+    try {
+        const showData = await fetchJellyfinShowData(show.Id);
+        const viewHTML = buildTvShowPanelHTML(show, showData.seasons, showData.nextUpEpisode, { includeBackButton: true });
+        renderJellyfinHomeContent(viewHTML);
+        const panel = DOM.text.querySelector('.jellyfin-tv-panel');
+        if (panel) {
+            setupTvPanelInteractions(panel, show, { onBack: displayBookmarksTree });
+        }
+    } catch (error) {
+        console.error('[Jellyfin] Unable to show TV series:', error);
+        renderJellyfinHomeContent(`<div class="jellyfin-library-panel"><p>Unable to load TV series.</p></div>`);
+    }
+}
+
+async function fetchJellyfinShowData(showId) {
+    const seasonsResponse = await fetch(`${CONFIG.JELLYFIN_SERVER}/Items?ParentId=${showId}&IncludeItemTypes=Season&SortBy=SortName&Fields=ChildCount&api_key=${CONFIG.JELLYFIN_API_KEY}`);
+    if (!seasonsResponse.ok) {
+        throw new Error(`Failed to load seasons (${seasonsResponse.status})`);
+    }
+    const seasonsData = await seasonsResponse.json();
+    const seasons = Array.isArray(seasonsData.Items) ? seasonsData.Items : [];
+    let nextUpEpisode = null;
+    if (hasJellyfinUserId()) {
+        try {
+            const nextResponse = await fetch(`${CONFIG.JELLYFIN_SERVER}/Users/${CONFIG.JELLYFIN_USER_ID}/NextUp?SeriesId=${showId}&Limit=1&api_key=${CONFIG.JELLYFIN_API_KEY}`);
+            if (nextResponse.ok) {
+                const nextData = await nextResponse.json();
+                nextUpEpisode = Array.isArray(nextData.Items) ? nextData.Items[0] : null;
+            }
+        } catch (error) {
+            console.warn('[Jellyfin] Next up request failed', error);
+        }
+    }
+    return { seasons, nextUpEpisode };
+}
+
+function buildTvShowPanelHTML(show, seasons, nextUpEpisode, { includeBackButton }) {
+    const resumeButtonHTML = nextUpEpisode
+        ? `<button class="jellyfin-control-button" data-action="tv-resume" data-episode-id="${nextUpEpisode.Id}">
+                Resume ${formatJellyfinEpisodeLabel(nextUpEpisode) || ''}
+           </button>`
+        : '';
+
+    const seasonsHTML = seasons.length
+        ? seasons.map(season => `
+            <button class="jellyfin-control-button" data-season-id="${season.Id}">
+                ${escapeHtml(season.Name || `Season ${season.IndexNumber ?? ''}`)}
+            </button>
+        `).join('')
+        : '<p>No seasons found.</p>';
+
+    const backButtonHTML = includeBackButton
+        ? `<button class="jellyfin-control-button" data-action="jellyfin-library-home">← Bookmarks</button>`
+        : '';
+
+    return `
+        <div class="jellyfin-library-panel jellyfin-tv-panel" data-tv-show-id="${show.Id}">
+            <div class="jellyfin-library-panel-header">
+                ${backButtonHTML}
+                <h2>${escapeHtml(show.Name || '')}</h2>
+            </div>
+            ${show.Overview ? `<p class="jellyfin-tv-overview">${escapeHtml(show.Overview)}</p>` : ''}
+            ${resumeButtonHTML}
+            <div class="jellyfin-tv-seasons">
+                ${seasonsHTML}
+            </div>
+            <div class="jellyfin-tv-episodes" data-tv-episodes>
+                <p>Select a season to view episodes.</p>
+            </div>
+        </div>
+    `;
+}
+
+function setupTvPanelInteractions(panel, show, { onBack } = {}) {
+    const backBtn = panel.querySelector('[data-action="jellyfin-library-home"]');
+    if (backBtn && typeof onBack === 'function') {
+        backBtn.addEventListener('click', onBack);
+    }
+    const resumeBtn = panel.querySelector('[data-action="tv-resume"]');
+    if (resumeBtn) {
+        resumeBtn.addEventListener('click', () => {
+            const episodeId = resumeBtn.dataset.episodeId;
+            if (episodeId) {
+                playJellyfinVideo({
+                    type: 'jellyfin',
+                    jellyfinType: 'Episode',
+                    jellyfinId: episodeId,
+                    title: `${show.Name} • Resume`
+                });
+            }
+        });
+    }
+    panel.querySelectorAll('[data-season-id]').forEach(button => {
+        button.addEventListener('click', () => {
+            loadJellyfinSeasonEpisodesIntoPanel(panel, show, button.dataset.seasonId);
+        });
+    });
+}
+
+async function loadJellyfinSeasonEpisodesIntoPanel(panel, show, seasonId) {
+    const episodesContainer = panel.querySelector('[data-tv-episodes]');
+    if (!episodesContainer) return;
+    episodesContainer.innerHTML = '<p>Loading episodes...</p>';
+
+    try {
+        const response = await fetch(`${CONFIG.JELLYFIN_SERVER}/Items?ParentId=${seasonId}&IncludeItemTypes=Episode&SortBy=IndexNumber&Fields=Overview,UserData&api_key=${CONFIG.JELLYFIN_API_KEY}`);
+        if (!response.ok) {
+            throw new Error(`Failed to load episodes (${response.status})`);
+        }
+        const data = await response.json();
+        const episodes = Array.isArray(data.Items) ? data.Items : [];
+        if (!episodes.length) {
+            episodesContainer.innerHTML = '<p>No episodes available.</p>';
+            return;
+        }
+        episodesContainer.innerHTML = episodes.map(episode => `
+            <button class="jellyfin-control-button" data-episode-id="${episode.Id}">
+                ${formatJellyfinEpisodeLabel(episode) || ''} ${escapeHtml(episode.Name || '')}
+                <div class="jellyfin-tv-episode-meta">${escapeHtml(episode.Overview || '')}</div>
+            </button>
+        `).join('');
+        episodesContainer.querySelectorAll('[data-episode-id]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const episodeId = btn.dataset.episodeId;
+                playJellyfinVideo({
+                    type: 'jellyfin',
+                    jellyfinType: 'Episode',
+                    jellyfinId: episodeId,
+                    title: `${show.Name} • ${btn.textContent.replace(/\s+/, ' ').trim()}`,
+                    description: ''
+                });
+            });
+        });
+    } catch (error) {
+        console.error('[Jellyfin] Unable to load season episodes:', error);
+        episodesContainer.innerHTML = '<p>Failed to load episodes.</p>';
+    }
+}
+async function showJellyfinAlbumList() {
+    try {
+        renderJellyfinLibraryLoading('Albums');
+        const params = new URLSearchParams({
+            IncludeItemTypes: 'MusicAlbum',
+            Recursive: 'true',
+            SortBy: 'SortName',
+            Fields: 'PrimaryImageAspectRatio,ProductionYear',
+            Limit: '200'
+        });
+        const albums = await fetchJellyfinItemsFromParams(params);
+        renderJellyfinLibraryCards('Albums', albums, {
+            emptyMessage: 'No albums found',
+            onSelect: album => {
+                displayJellyfinAlbum({
+                    type: 'jellyfin',
+                    jellyfinType: 'MusicAlbum',
+                    jellyfinId: album.Id,
+                    title: album.Name,
+                    description: album.Overview || album.Taglines?.[0] || ''
+                });
+            },
+            subtitleExtractor: album => album.ProductionYear ? `${album.ProductionYear}` : ''
+        });
+    } catch (error) {
+        console.error('[Jellyfin] Unable to load albums:', error);
+        renderJellyfinHomeContent(`<div class="jellyfin-library-panel"><p>Failed to load albums.</p></div>`);
+    }
+}
+
+async function showJellyfinArtistList() {
+    try {
+        renderJellyfinLibraryLoading('Artists');
+        const params = new URLSearchParams({
+            IncludeItemTypes: 'MusicArtist',
+            Recursive: 'true',
+            SortBy: 'SortName',
+            Fields: 'PrimaryImageAspectRatio',
+            Limit: '200'
+        });
+        const artists = await fetchJellyfinItemsFromParams(params);
+        renderJellyfinLibraryCards('Artists', artists, {
+            emptyMessage: 'No artists found',
+            onSelect: artist => {
+                displayJellyfinArtist({
+                    type: 'jellyfin',
+                    jellyfinType: 'MusicArtist',
+                    jellyfinId: artist.Id,
+                    title: artist.Name,
+                    description: artist.Overview || ''
+                });
+            }
+        });
+    } catch (error) {
+        console.error('[Jellyfin] Unable to load artists:', error);
+        renderJellyfinHomeContent(`<div class="jellyfin-library-panel"><p>Failed to load artists.</p></div>`);
+    }
+}
+
+async function showJellyfinPlaylistList() {
+    try {
+        renderJellyfinLibraryLoading('Playlists');
+        const params = new URLSearchParams({
+            IncludeItemTypes: 'Playlist',
+            SortBy: 'SortName',
+            Fields: 'ItemCounts',
+            Limit: '200'
+        });
+        const playlists = await fetchJellyfinItemsFromParams(params);
+        renderJellyfinLibraryCards('Playlists', playlists, {
+            emptyMessage: 'No playlists found',
+            onSelect: playlist => {
+                displayJellyfinAlbum({
+                    type: 'jellyfin',
+                    jellyfinType: 'Playlist',
+                    jellyfinId: playlist.Id,
+                    title: playlist.Name,
+                    description: playlist.Overview || ''
+                });
+            },
+            subtitleExtractor: playlist => playlist.ChildCount ? `${playlist.ChildCount} items` : ''
+        });
+    } catch (error) {
+        console.error('[Jellyfin] Unable to load playlists:', error);
+        renderJellyfinHomeContent(`<div class="jellyfin-library-panel"><p>Failed to load playlists.</p></div>`);
+    }
+}
+
+async function showJellyfinFavoriteTracks() {
+    if (!hasJellyfinUserId()) {
+        renderJellyfinHomeContent(`
+            <div class="jellyfin-library-panel">
+                <p>Set JELLYFIN_USER_ID in script.js to view favorite tracks.</p>
+            </div>
+        `);
+        return;
+    }
+    try {
+        renderJellyfinLibraryLoading('Favorite Tracks');
+        const params = new URLSearchParams({
+            IncludeItemTypes: 'Audio',
+            Recursive: 'true',
+            Filters: 'IsFavorite',
+            SortBy: 'SortName',
+            Fields: 'Album,Artists',
+            Limit: '200',
+            UserId: CONFIG.JELLYFIN_USER_ID
+        });
+        const favoriteTracks = await fetchJellyfinItemsFromParams(params);
+        renderJellyfinTrackList('Favorite Tracks', favoriteTracks, {
+            emptyMessage: 'No favorite tracks found',
+            onSelect: track => {
+                playJellyfinAudio({
+                    type: 'jellyfin',
+                    jellyfinType: 'Audio',
+                    jellyfinId: track.Id,
+                    title: track.Name,
+                    description: track.Album || ''
+                });
+            }
+        });
+    } catch (error) {
+        console.error('[Jellyfin] Unable to load favorites:', error);
+        renderJellyfinHomeContent(`<div class="jellyfin-library-panel"><p>Failed to load favorite tracks.</p></div>`);
+    }
+}
+
+async function shuffleAllJellyfinMusic() {
+    try {
+        showJellyfinStatus('Loading random tracks...');
+        const tracks = await fetchRandomJellyfinTracks({ limit: 40 });
+        if (!tracks.length) {
+            showJellyfinStatus('No tracks available', 'error');
+            return;
+        }
+        const queue = tracks.map(track => ({
+            ...track,
+            jellyfinType: 'Audio',
+            album: track.Album || '',
+            albumId: track.AlbumId || track.ParentId || track.Id,
+            description: track.Album || ''
+        }));
+
+        // Mount player in text zone with back button
+        const playerHTML = '<div id="jellyfin-shuffle-player" data-embed-player></div>';
+        renderJellyfinHomeContent(playerHTML, { showBackButton: true });
+
+        playJellyfinAudio(queue[0], {
+            queue,
+            startIndex: 0,
+            context: 'shuffle-all',
+            mountSelector: '#jellyfin-shuffle-player'
+        });
+    } catch (error) {
+        console.error('[Jellyfin] Unable to shuffle library:', error);
+        showJellyfinStatus('Unable to shuffle library', 'error');
+    }
+}
+
+async function playJellyfinChannel(channelKey) {
+    let searchName = '';
+    let title = '';
+    if (channelKey === 'classic') {
+        searchName = 'classic';
+        title = 'Classic Movies';
+    } else if (channelKey === 'humor') {
+        searchName = 'humor';
+        title = 'Humor Hub';
+    }
+
+    try {
+        showJellyfinStatus(`Looking for ${title} channel...`);
+
+        // Search for channels matching the name
+        const params = new URLSearchParams({
+            searchTerm: searchName,
+            IncludeItemTypes: 'TvChannel,Video,Movie,Episode',
+            Recursive: 'true',
+            Limit: '10'
+        });
+
+        const results = await fetchJellyfinItemsFromParams(params);
+
+        if (!results || results.length === 0) {
+            showJellyfinStatus(`No channels found matching "${searchName}"`, 'error');
+            return;
+        }
+
+        // Use the first result
+        const channel = results[0];
+        playJellyfinVideo({
+            type: 'jellyfin',
+            jellyfinType: channel.Type || 'Video',
+            jellyfinId: channel.Id,
+            title: channel.Name || title,
+            description: channel.Overview || `${title} Channel`
+        });
+    } catch (error) {
+        console.error('[Jellyfin] Channel lookup failed:', error);
+        showJellyfinStatus('Unable to find channel', 'error');
+    }
 }
 
 function flattenBookmarkRoot(bookmarks) {
@@ -4418,8 +5192,20 @@ function exitSearchMode() {
     // Clear URL parameters
     window.history.pushState({}, '', window.location.pathname);
 
-    // Restore home mode
-    loadHomeMode();
+    // Check if Jellyfin content is active
+    const hasJellyfinContent = DOM.text && DOM.text.dataset.jellyfinActive === 'true';
+
+    if (hasJellyfinContent) {
+        // Keep Jellyfin player active, only restore home UI
+        console.log('[Search] Keeping Jellyfin player active');
+        updateClock();
+        displayAppLinks();
+        loadNextcloudFeed();
+        showHomeModeUI();
+    } else {
+        // Normal restore
+        loadHomeMode();
+    }
 }
 
 function updateSearchTriggerIcons(isActive) {
@@ -4473,21 +5259,23 @@ async function performSearch(query) {
     exitNavigationMode();
 
     // Show loading in overview instead of dropdown
-    DOM.overview.innerHTML = '<div style="padding:1rem; color:#888;">Searching...</div>';
+    DOM.overview.innerHTML = '<div class="loading-message">Searching...</div>';
 
     // Update URL with search query
     updateURL({ q: query });
 
     try {
         // Fetch suggestions from all sources in parallel
-        const [wikiResults, bookmarkResults, traktResults] = await Promise.all([
+        const [wikiResults, bookmarkResults, traktResults, jellyfinResults] = await Promise.all([
             searchWikipedia(query),
             searchBookmarks(query),
-            searchTrakt(query)
+            searchTrakt(query),
+            searchJellyfin(query)
         ]);
 
         STATE.currentSuggestions = [
             ...bookmarkResults,
+            ...jellyfinResults,
             ...wikiResults,
             ...traktResults
         ];
@@ -4495,7 +5283,7 @@ async function performSearch(query) {
         displaySuggestions(STATE.currentSuggestions, DOM.overview);
     } catch (error) {
         console.error('Search error:', error);
-        DOM.overview.innerHTML = '<div style="padding:1rem; color:#f88;">Search failed</div>';
+        DOM.overview.innerHTML = '<div class="error-message">Search failed</div>';
     }
 }
 
@@ -4615,6 +5403,106 @@ async function searchTrakt(query) {
     }
 }
 
+async function searchJellyfin(query) {
+    if (!CONFIG.JELLYFIN_SERVER || !CONFIG.JELLYFIN_API_KEY) {
+        console.log('[Jellyfin] Server or API key not configured, skipping search');
+        return [];
+    }
+
+    try {
+        const url = `${CONFIG.JELLYFIN_SERVER}/Items?searchTerm=${encodeURIComponent(query)}&Recursive=true&Limit=${CONFIG.SUGGESTION_LIMIT.jellyfin}&IncludeItemTypes=Movie,Series,Episode,Audio,MusicAlbum,MusicArtist,Playlist,Book,AudioBook,TvChannel`;
+        const response = await fetch(url, {
+            headers: {
+                'X-Emby-Token': CONFIG.JELLYFIN_API_KEY
+            }
+        });
+
+        if (!response.ok) {
+            console.error('[Jellyfin] Search failed:', response.status, response.statusText);
+            return [];
+        }
+
+        const data = await response.json();
+
+        return data.Items.map(item => {
+            // Determine media type for description
+            let typeLabel = item.Type;
+            let description = '';
+
+            switch (item.Type) {
+                case 'Movie':
+                    typeLabel = 'Movie';
+                    description = item.ProductionYear ? `Movie (${item.ProductionYear})` : 'Movie';
+                    break;
+                case 'Series':
+                    typeLabel = 'TV Show';
+                    description = item.ProductionYear ? `TV Show (${item.ProductionYear})` : 'TV Show';
+                    break;
+                case 'Episode':
+                    typeLabel = 'Episode';
+                    description = item.SeriesName
+                        ? `${item.SeriesName} - S${item.ParentIndexNumber || '?'}E${item.IndexNumber || '?'}`
+                        : 'Episode';
+                    break;
+                case 'Audio':
+                    typeLabel = 'Song';
+                    description = item.AlbumArtist || item.Album || 'Song';
+                    break;
+                case 'MusicAlbum':
+                    typeLabel = 'Album';
+                    description = item.AlbumArtist || 'Album';
+                    break;
+                case 'MusicArtist':
+                    typeLabel = 'Artist';
+                    description = 'Music Artist';
+                    break;
+                case 'Playlist':
+                    typeLabel = 'Playlist';
+                    description = `Playlist (${item.ChildCount || 0} items)`;
+                    break;
+                case 'Book':
+                    typeLabel = 'Book';
+                    description = 'Book';
+                    break;
+                case 'AudioBook':
+                    typeLabel = 'Audiobook';
+                    description = 'Audiobook';
+                    break;
+                case 'TvChannel':
+                    typeLabel = 'Live TV';
+                    description = 'Live TV Channel';
+                    break;
+                default:
+                    description = item.Type;
+            }
+
+            // Build thumbnail URL
+            const thumbnailUrl = item.ImageTags?.Primary
+                ? `${CONFIG.JELLYFIN_SERVER}/Items/${item.Id}/Images/Primary?maxHeight=48&maxWidth=48&quality=90&api_key=${CONFIG.JELLYFIN_API_KEY}`
+                : null;
+
+            return {
+                type: 'jellyfin',
+                jellyfinType: item.Type,
+                jellyfinId: item.Id,
+                title: item.Name,
+                description: description,
+                typeLabel: typeLabel,
+                year: item.ProductionYear,
+                seriesName: item.SeriesName,
+                albumArtist: item.AlbumArtist,
+                album: item.Album,
+                serverId: item.ServerId,
+                thumbnailUrl: thumbnailUrl,
+                icon: typeLabel // Will be used to determine which icon to show
+            };
+        });
+    } catch (error) {
+        console.error('[Jellyfin] Search error:', error);
+        return [];
+    }
+}
+
 // ============================================================================
 // SUGGESTIONS DISPLAY
 // ============================================================================
@@ -4658,6 +5546,14 @@ function displaySuggestions(suggestions, container) {
             titleText = item.name;
         } else if (item.type === 'trakt') {
             iconHTML = '<img src="icons/web.webp" alt="Trakt" style="width:24px; height:24px; flex-shrink:0;">';
+            titleText = item.title;
+        } else if (item.type === 'jellyfin') {
+            // Use thumbnail if available, otherwise use jellyfin favicon
+            if (item.thumbnailUrl) {
+                iconHTML = `<img src="${item.thumbnailUrl}" alt="${item.typeLabel}" style="width:48px; height:48px; flex-shrink:0; border-radius:4px; object-fit:cover;" onerror="this.src='icons/jellyfin.webp'">`;
+            } else {
+                iconHTML = '<img src="icons/jellyfin.webp" alt="Jellyfin" style="width:24px; height:24px; flex-shrink:0;">';
+            }
             titleText = item.title;
         }
 
@@ -4917,6 +5813,8 @@ function selectSuggestion(item) {
         exitSearchMode();
     } else if (item.type === 'trakt') {
         loadTraktItem(item);
+    } else if (item.type === 'jellyfin') {
+        loadJellyfinItem(item);
     }
 }
 
@@ -5178,7 +6076,7 @@ function displayWikipediaArticle(article) {
 
         DOM.dock.innerHTML = linksHTML;
     } else {
-        DOM.dock.innerHTML = '';
+        showDefaultDock();
     }
 }
 
@@ -5191,7 +6089,7 @@ async function loadTraktItem(item) {
         // Show loading state
         DOM.text.innerHTML = '<div style="padding:1rem; color:#888;">Loading from Trakt.tv...</div>';
         DOM.overview.innerHTML = '<div style="padding:1rem; color:#888;">Loading details...</div>';
-        DOM.dock.innerHTML = '';
+        showDefaultDock();
 
         // Update page title
         if (DOM.pageTitleText) {
@@ -5388,6 +6286,1470 @@ async function addToTraktHistory(item) {
     const result = await response.json();
     console.log('[Trakt] Successfully added to history:', result);
     return result;
+}
+
+// ============================================================================
+// JELLYFIN DISPLAY
+// ============================================================================
+
+async function loadJellyfinItem(item) {
+    console.log('[Jellyfin] Loading item:', item);
+
+    // Route to appropriate handler based on media type
+    switch (item.jellyfinType) {
+        case 'Movie':
+        case 'Episode':
+        case 'TvChannel':
+            playJellyfinVideo(item);
+            break;
+        case 'Series':
+            displayJellyfinSeries(item);
+            break;
+        case 'Audio':
+        case 'AudioBook':
+            playJellyfinAudio(item);
+            break;
+        case 'MusicAlbum':
+        case 'Playlist':
+            displayJellyfinAlbum(item);
+            break;
+        case 'MusicArtist':
+            displayJellyfinArtist(item);
+            break;
+        case 'Book':
+            displayJellyfinBook(item);
+            break;
+        default:
+            console.warn('[Jellyfin] Unknown media type:', item.jellyfinType);
+            openInJellyfin(item.jellyfinId);
+    }
+}
+
+const JELLYFIN_MAX_AUDIO_BITRATE = '320000';
+
+function resetJellyfinPlaybackState(overrides = {}) {
+    STATE.jellyfinPlayback = {
+        ...createJellyfinPlaybackState(),
+        ...overrides
+    };
+}
+
+function getActiveJellyfinTrack() {
+    const playback = STATE.jellyfinPlayback;
+    if (!playback.queue.length) return null;
+    return playback.queue[Math.max(0, playback.currentIndex)] || null;
+}
+
+function syncPlaybackFavoriteState() {
+    const track = getActiveJellyfinTrack();
+    STATE.jellyfinPlayback.isFavorite = Boolean(track?.isFavorite);
+}
+
+function normalizeJellyfinTrack(raw, overrides = {}) {
+    if (!raw) return null;
+    const jellyfinId = overrides.jellyfinId || raw.jellyfinId || raw.Id || raw.id;
+    if (!jellyfinId) {
+        console.warn('[Jellyfin] Track is missing an ID:', raw);
+        return null;
+    }
+    const albumId = overrides.albumId || raw.albumId || raw.AlbumId || raw.ParentId || null;
+    const title = overrides.title || raw.title || raw.Name || 'Untitled Track';
+    const album = overrides.album || raw.album || raw.Album || '';
+    const artist = overrides.artist
+        || (Array.isArray(raw.Artists) ? raw.Artists.join(', ') : '')
+        || (Array.isArray(raw.AlbumArtists) ? raw.AlbumArtists.join(', ') : '')
+        || raw.Artist
+        || raw.AlbumArtist
+        || '';
+    return {
+        jellyfinId,
+        title,
+        description: overrides.description || raw.description || raw.Overview || album || '',
+        album,
+        albumId,
+        artist,
+        runTimeTicks: overrides.runTimeTicks ?? raw.RunTimeTicks ?? null,
+        indexNumber: overrides.indexNumber ?? raw.IndexNumber ?? null,
+        isFavorite: Boolean(
+            overrides.isFavorite
+            ?? raw.isFavorite
+            ?? raw.IsFavorite
+            ?? raw.UserData?.IsFavorite
+            ?? raw?.source?.UserData?.IsFavorite
+        ),
+        source: raw
+    };
+}
+
+function setJellyfinQueue(tracks, startIndex = 0, context = {}) {
+    const normalized = (tracks || [])
+        .map(track => normalizeJellyfinTrack(track, context.trackOverrides || {}))
+        .filter(Boolean);
+    if (!normalized.length) {
+        console.warn('[Jellyfin] Unable to set playback queue (no tracks)');
+        return;
+    }
+    const initialIndex = Math.max(0, Math.min(startIndex, normalized.length - 1));
+    STATE.jellyfinPlayback.queue = normalized;
+    STATE.jellyfinPlayback.currentIndex = initialIndex;
+    STATE.jellyfinPlayback.repeatOne = Boolean(context.repeatOne);
+    STATE.jellyfinPlayback.context = context.context || 'single';
+    STATE.jellyfinPlayback.mountSelector = context.mountSelector || null;
+    STATE.jellyfinPlayback.albumId = context.albumId || normalized[initialIndex].albumId || null;
+    STATE.jellyfinPlayback.albumTitle = context.albumTitle || '';
+    STATE.jellyfinPlayback.sourceItem = context.sourceItem || null;
+    syncPlaybackFavoriteState();
+}
+
+/**
+ * Build a Jellyfin API URL with common parameters
+ * @param {string} path - API path (without leading slash)
+ * @param {Object} params - Additional URL parameters
+ * @returns {string} Complete URL with API key
+ */
+function buildJellyfinUrl(path, params = {}) {
+    const urlParams = new URLSearchParams({
+        api_key: CONFIG.JELLYFIN_API_KEY,
+        ...params
+    });
+    return `${CONFIG.JELLYFIN_SERVER}/${path}?${urlParams.toString()}`;
+}
+
+function getJellyfinImageUrl(itemId, { maxWidth = 500 } = {}) {
+    if (!itemId) return '';
+    const params = maxWidth ? { maxWidth } : {};
+    return buildJellyfinUrl(`Items/${itemId}/Images/Primary`, params);
+}
+
+function buildJellyfinAudioSources(trackId) {
+    if (!trackId) return [];
+    const basePath = `Audio/${trackId}`;
+    const streamParams = {
+        static: 'true',
+        MaxStreamingBitrate: JELLYFIN_MAX_AUDIO_BITRATE
+    };
+    const hlsParams = {
+        Container: 'opus,webm|opus,mp3,aac,m4a|aac,flac,wav,ogg',
+        MaxStreamingBitrate: JELLYFIN_MAX_AUDIO_BITRATE,
+        AudioCodec: 'aac',
+        TranscodingContainer: 'ts',
+        TranscodingProtocol: 'hls'
+    };
+    return [
+        {
+            type: 'audio/mpeg',
+            url: buildJellyfinUrl(`${basePath}/stream.mp3`, streamParams)
+        },
+        {
+            type: 'audio/aac',
+            url: buildJellyfinUrl(`${basePath}/stream.aac`, streamParams)
+        },
+        {
+            type: 'application/x-mpegURL',
+            url: buildJellyfinUrl(`${basePath}/universal`, hlsParams)
+        }
+    ];
+}
+
+function buildJellyfinDetailUrl(itemId) {
+    if (!itemId) return '#';
+    return `${CONFIG.JELLYFIN_SERVER}/web/index.html#!/details?id=${itemId}`;
+}
+
+function getPrimaryJellyfinArtist(track) {
+    const source = track?.source || {};
+    const artistItems = source.ArtistItems || source.AlbumArtistItems || source.AlbumArtistsItems;
+    if (Array.isArray(artistItems) && artistItems.length > 0) {
+        const first = artistItems[0] || {};
+        return {
+            name: first.Name || first.name || track.artist || '',
+            id: first.Id || first.id || null
+        };
+    }
+    if (Array.isArray(source.AlbumArtists) && source.AlbumArtists.length > 0) {
+        return { name: source.AlbumArtists[0], id: null };
+    }
+    if (Array.isArray(source.Artists) && source.Artists.length > 0) {
+        return { name: source.Artists[0], id: null };
+    }
+    if (track.artist) {
+        return { name: track.artist, id: null };
+    }
+    return null;
+}
+
+function formatAudioTimestamp(seconds) {
+    if (!Number.isFinite(seconds) || seconds < 0) {
+        return '--:--';
+    }
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+function updateJellyfinProgressUI(audioEl) {
+    if (!audioEl) return;
+    const container = getJellyfinPlaybackContainer();
+    if (!container) return;
+    const timeEl = container.querySelector('[data-jellyfin-time]');
+    const fillEl = container.querySelector('[data-jellyfin-progress-fill]');
+    const duration = Number.isFinite(audioEl.duration) ? audioEl.duration : NaN;
+    const ratio = duration > 0 ? Math.min(Math.max(audioEl.currentTime / duration, 0), 1) : 0;
+    if (timeEl) {
+        const durationText = Number.isFinite(duration) ? formatAudioTimestamp(duration) : '--:--';
+        timeEl.textContent = `${formatAudioTimestamp(audioEl.currentTime)} / ${durationText}`;
+    }
+    if (fillEl) {
+        fillEl.style.width = `${ratio * 100}%`;
+    }
+}
+
+function updateJellyfinPlayButtonState(container) {
+    if (!container) container = getJellyfinPlaybackContainer();
+    const playBtn = container ? container.querySelector('[data-action="toggle-play"]') : null;
+    const audioEl = getJellyfinAudioElement();
+    if (!playBtn || !audioEl) return;
+    playBtn.textContent = audioEl.paused ? '▶️' : '⏸️';
+}
+
+function toggleJellyfinPlayback() {
+    const audioEl = getJellyfinAudioElement();
+    if (!audioEl) return;
+    if (audioEl.paused) {
+        audioEl.play().catch(error => {
+            console.warn('[Jellyfin] Unable to start playback:', error);
+            showJellyfinStatus('Unable to start playback', 'error');
+        });
+    } else {
+        audioEl.pause();
+    }
+    updateJellyfinPlayButtonState();
+}
+
+function handleJellyfinProgressSeek(event, audioEl) {
+    if (!audioEl || !Number.isFinite(audioEl.duration) || audioEl.duration <= 0) {
+        return;
+    }
+    const trackEl = event.currentTarget;
+    const rect = trackEl.getBoundingClientRect();
+    const ratio = Math.min(Math.max((event.clientX - rect.left) / rect.width, 0), 1);
+    audioEl.currentTime = ratio * audioEl.duration;
+    updateJellyfinProgressUI(audioEl);
+}
+
+function shuffleCurrentJellyfinQueue() {
+    const playback = STATE.jellyfinPlayback;
+    if (!playback.queue.length) {
+        showJellyfinStatus('Nothing to shuffle', 'error');
+        return;
+    }
+    if (playback.queue.length < 2) {
+        showJellyfinStatus('Need more tracks to shuffle', 'error');
+        return;
+    }
+    const shuffled = [...playback.queue];
+    for (let i = shuffled.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    playback.queue = shuffled;
+    playback.currentIndex = 0;
+    syncPlaybackFavoriteState();
+    renderJellyfinAudioPlayer();
+    showJellyfinStatus('Shuffled current queue');
+}
+
+async function autoDetectJellyfinUserId() {
+    // Skip if already configured
+    if (CONFIG.JELLYFIN_USER_ID && CONFIG.JELLYFIN_USER_ID !== 'YOUR_JELLYFIN_USER_ID') {
+        return;
+    }
+
+    // Skip if Jellyfin not configured
+    if (!CONFIG.JELLYFIN_SERVER || !CONFIG.JELLYFIN_API_KEY || CONFIG.JELLYFIN_API_KEY === 'YOUR_API_KEY') {
+        return;
+    }
+
+    try {
+        const response = await fetch(`${CONFIG.JELLYFIN_SERVER}/Users?api_key=${CONFIG.JELLYFIN_API_KEY}`);
+        if (!response.ok) return;
+
+        const users = await response.json();
+        if (Array.isArray(users) && users.length > 0) {
+            // Use the first user (usually the admin/main user)
+            CONFIG.JELLYFIN_USER_ID = users[0].Id;
+            console.log('[Jellyfin] Auto-detected user ID:', CONFIG.JELLYFIN_USER_ID);
+        }
+    } catch (error) {
+        console.warn('[Jellyfin] Could not auto-detect user ID:', error);
+    }
+}
+
+function hasJellyfinUserId() {
+    return CONFIG.JELLYFIN_USER_ID && CONFIG.JELLYFIN_USER_ID !== 'YOUR_JELLYFIN_USER_ID';
+}
+
+async function fetchJellyfinFavoriteStatus(itemId) {
+    if (!hasJellyfinUserId()) return null;
+    try {
+        const response = await fetch(`${CONFIG.JELLYFIN_SERVER}/Users/${CONFIG.JELLYFIN_USER_ID}/Items/${itemId}?api_key=${CONFIG.JELLYFIN_API_KEY}`);
+        if (!response.ok) return null;
+        const data = await response.json();
+        return Boolean(data?.UserData?.IsFavorite);
+    } catch (error) {
+        console.warn('[Jellyfin] Unable to fetch favorite status', error);
+        return null;
+    }
+}
+
+async function setJellyfinFavorite(itemId, shouldFavorite) {
+    if (!hasJellyfinUserId()) {
+        showJellyfinStatus('Set JELLYFIN_USER_ID in config to favorite items', 'error');
+        return false;
+    }
+    const method = shouldFavorite ? 'POST' : 'DELETE';
+    try {
+        const response = await fetch(`${CONFIG.JELLYFIN_SERVER}/Users/${CONFIG.JELLYFIN_USER_ID}/FavoriteItems/${itemId}?api_key=${CONFIG.JELLYFIN_API_KEY}`, {
+            method
+        });
+        if (!response.ok) {
+            throw new Error(`Favorite toggle failed (${response.status})`);
+        }
+        return true;
+    } catch (error) {
+        console.error('[Jellyfin] Favorite toggle failed:', error);
+        showJellyfinStatus('Unable to update favorite', 'error');
+        return false;
+    }
+}
+
+async function toggleCurrentTrackFavorite() {
+    const track = getActiveJellyfinTrack();
+    if (!track) return;
+    const targetState = !track.isFavorite;
+    track.isFavorite = targetState;
+    STATE.jellyfinPlayback.isFavorite = targetState;
+    updateJellyfinFavoriteButtonState();
+    const success = await setJellyfinFavorite(track.jellyfinId, targetState);
+    if (success) {
+        showJellyfinStatus(targetState ? 'Added to favorites' : 'Removed from favorites');
+        return;
+    }
+    // revert on failure
+    track.isFavorite = !targetState;
+    STATE.jellyfinPlayback.isFavorite = track.isFavorite;
+    updateJellyfinFavoriteButtonState();
+}
+
+async function fetchRandomJellyfinTracks({ limit = 10, favoritesOnly = false } = {}) {
+    const cappedLimit = Math.max(1, Number(limit) || 1);
+    const params = new URLSearchParams({
+        IncludeItemTypes: 'Audio',
+        Recursive: 'true',
+        SortBy: 'Random',
+        Limit: cappedLimit.toString(),
+        Fields: 'AudioInfo,ParentId,Album,AlbumId,Artists'
+    });
+    if (favoritesOnly) {
+        params.set('Filters', 'IsFavorite');
+        // IsFavorite filter requires UserId parameter
+        if (hasJellyfinUserId()) {
+            params.set('UserId', CONFIG.JELLYFIN_USER_ID);
+        }
+    }
+
+    return await fetchJellyfinItemsFromParams(params);
+}
+
+async function shuffleJellyfinFavorites() {
+    if (!hasJellyfinUserId()) {
+        const message = '<div class="info-message">Set JELLYFIN_USER_ID in script.js to shuffle your favorite tracks.</div>';
+        renderJellyfinHomeContent(message, { showBackButton: true });
+        showJellyfinStatus('User ID required for favorites', 'error');
+        return;
+    }
+    try {
+        showJellyfinStatus('Loading favorite tracks...');
+        const favorites = await fetchRandomJellyfinTracks({ limit: 25, favoritesOnly: true });
+        if (!favorites.length) {
+            showJellyfinStatus('No favorite tracks found', 'error');
+            return;
+        }
+        const queue = favorites.map(track => ({
+            ...track,
+            jellyfinType: 'Audio',
+            album: track.Album || 'Favorites',
+            albumId: track.AlbumId || track.ParentId || track.Id,
+            description: track.Album || 'Favorite Tracks'
+        }));
+
+        // Mount player in text zone with back button
+        const playerHTML = '<div id="jellyfin-favorites-player" data-embed-player></div>';
+        renderJellyfinHomeContent(playerHTML, { showBackButton: true });
+
+        playJellyfinAudio(queue[0], {
+            queue,
+            startIndex: 0,
+            context: 'favorites',
+            mountSelector: '#jellyfin-favorites-player'
+        });
+        showJellyfinStatus(`Playing ${queue.length} favorite track${queue.length === 1 ? '' : 's'}`);
+    } catch (error) {
+        console.error('[Jellyfin] Failed to shuffle favorites:', error);
+        showJellyfinStatus('Unable to load favorite tracks', 'error');
+    }
+}
+
+async function queueRandomLibraryTrackNext() {
+    if (!STATE.jellyfinPlayback.queue.length) {
+        showJellyfinStatus('Start playback before queuing new songs', 'error');
+        return;
+    }
+    try {
+        showJellyfinStatus('Fetching a surprise track...');
+        const [randomTrack] = await fetchRandomJellyfinTracks({ limit: 1 });
+        if (!randomTrack) {
+            showJellyfinStatus('No tracks available to queue', 'error');
+            return;
+        }
+        const normalized = normalizeJellyfinTrack(randomTrack, {
+            album: randomTrack.Album || randomTrack.SeriesName || 'Library',
+            albumId: randomTrack.AlbumId || randomTrack.ParentId || null
+        });
+        if (!normalized) {
+            showJellyfinStatus('Unable to queue track', 'error');
+            return;
+        }
+        STATE.jellyfinPlayback.queue.splice(Math.max(STATE.jellyfinPlayback.currentIndex + 1, 0), 0, normalized);
+        const container = getJellyfinPlaybackContainer();
+        if (container) {
+            updateJellyfinControlStates(container);
+        }
+        showJellyfinStatus('Random library track queued next');
+    } catch (error) {
+        console.error('[Jellyfin] Failed to queue random track:', error);
+        showJellyfinStatus('Unable to queue track', 'error');
+    }
+}
+
+async function fetchJellyfinItemsFromParams(params) {
+    // Convert URLSearchParams to object for buildJellyfinUrl
+    const paramsObj = {};
+    for (const [key, value] of params.entries()) {
+        paramsObj[key] = value;
+    }
+    const url = buildJellyfinUrl('Items', paramsObj);
+    const response = await fetch(url);
+    if (!response.ok) {
+        throw new Error(`Jellyfin request failed (${response.status})`);
+    }
+    const data = await response.json();
+    return Array.isArray(data.Items) ? data.Items : [];
+}
+
+async function fetchJellyfinItemsByArtist(artistId, extraParams = {}, options = {}) {
+    if (!artistId) return [];
+    const { fallbackToAlbumArtist = true } = options;
+    const params = new URLSearchParams({
+        Recursive: 'true',
+        ArtistIds: artistId,
+        ...extraParams
+    });
+
+    let items = await fetchJellyfinItemsFromParams(params);
+    if (!items.length && fallbackToAlbumArtist) {
+        const fallbackParams = new URLSearchParams({
+            Recursive: 'true',
+            AlbumArtistIds: artistId,
+            ...extraParams
+        });
+        try {
+            items = await fetchJellyfinItemsFromParams(fallbackParams);
+        } catch {
+            items = [];
+        }
+    }
+    return items;
+}
+
+function buildJellyfinVideoSources(itemId) {
+    if (!itemId) return [];
+    const mp4Params = {
+        Static: 'false',
+        Container: 'mp4',
+        VideoCodec: 'h264',
+        AudioCodec: 'aac',
+        EnableAutoStreamCopy: 'true'
+    };
+    const hlsParams = {
+        TranscodingProtocol: 'hls',
+        VideoCodec: 'h264',
+        AudioCodec: 'aac',
+        PlaylistFileExtension: 'm3u8',
+        TranscodingContainer: 'ts',
+        EnableAutoStreamCopy: 'true'
+    };
+    return [
+        {
+            type: 'video/mp4',
+            url: buildJellyfinUrl(`Videos/${itemId}/stream`, mp4Params)
+        },
+        {
+            type: 'application/x-mpegURL',
+            url: buildJellyfinUrl(`Videos/${itemId}/master.m3u8`, hlsParams)
+        }
+    ];
+}
+
+async function shuffleArtistTracks(artistId, artistName = 'Artist') {
+    if (!artistId) {
+        showJellyfinStatus('Missing artist to shuffle', 'error');
+        return;
+    }
+    try {
+        showJellyfinStatus(`Shuffling ${artistName}...`);
+        const tracks = await fetchJellyfinItemsByArtist(artistId, {
+            IncludeItemTypes: 'Audio',
+            SortBy: 'Random',
+            Limit: '25',
+            Fields: 'AudioInfo,ParentId,Album,AlbumId,Artists'
+        });
+        if (!tracks.length) {
+            showJellyfinStatus('No tracks found for this artist', 'error');
+            return;
+        }
+        const queue = tracks.map(track => ({
+            ...track,
+            jellyfinType: 'Audio',
+            album: track.Album || artistName,
+            albumId: track.AlbumId || track.ParentId || null,
+            description: artistName
+        }));
+        playJellyfinAudio(queue[0], {
+            queue,
+            startIndex: 0,
+            context: 'single'
+        });
+        showJellyfinStatus(`Playing ${artistName}`);
+    } catch (error) {
+        console.error('[Jellyfin] Failed to shuffle artist:', error);
+        showJellyfinStatus('Unable to shuffle this artist', 'error');
+    }
+}
+
+function getJellyfinPlaybackContainer() {
+    const selector = STATE.jellyfinPlayback.mountSelector;
+    if (selector) {
+        const target = document.querySelector(selector);
+        if (target) return target;
+        console.warn('[Jellyfin] Playback mount not found, falling back to main text container:', selector);
+    }
+    return DOM.text;
+}
+
+function renderJellyfinAudioPlayer() {
+    const track = getActiveJellyfinTrack();
+    if (!track) {
+        showJellyfinStatus('Unable to load track for playback', 'error');
+        return;
+    }
+    const container = getJellyfinPlaybackContainer();
+    if (!container) return;
+
+    const embedMode = Boolean(STATE.jellyfinPlayback.mountSelector);
+    const coverUrl = getJellyfinImageUrl(track.albumId || track.jellyfinId, { maxWidth: embedMode ? 160 : 220 });
+    const sources = buildJellyfinAudioSources(track.jellyfinId);
+    const jellyfinUrl = buildJellyfinDetailUrl(track.jellyfinId);
+    const queueMetaText = STATE.jellyfinPlayback.queue.length
+        ? `Track ${STATE.jellyfinPlayback.currentIndex + 1} of ${STATE.jellyfinPlayback.queue.length}`
+        : '';
+    const closeButtonHTML = embedMode
+        ? ''
+        : `<div style="text-align:center;">
+                <button class="jellyfin-close-player" style="padding:0.5rem 1rem; background:#333; color:#fff; border:none; border-radius:6px; cursor:pointer;">
+                    ← Back to Bookmarks
+                </button>
+            </div>`;
+    const embedAlbumLabel = track.album || STATE.jellyfinPlayback.albumTitle || '';
+    const albumTargetId = track.albumId || track.source?.AlbumId || track.jellyfinId;
+    const albumUrl = buildJellyfinDetailUrl(albumTargetId);
+    const artBlock = `
+        <a href="${albumUrl}" target="_blank" rel="noopener" class="jellyfin-mini-art" aria-label="Open album in Jellyfin">
+            ${coverUrl ? `<img src="${coverUrl}" alt="Album art" onerror="this.style.display='none'">` : ''}
+        </a>
+    `;
+    const artistInfo = getPrimaryJellyfinArtist(track);
+    const artistName = artistInfo?.name || '';
+    const artistUrl = artistInfo?.id ? buildJellyfinDetailUrl(artistInfo.id) : null;
+    const artistHTML = artistName
+        ? (artistUrl
+            ? `<a href="${artistUrl}" target="_blank" rel="noopener">${escapeHtml(artistName)}</a>`
+            : `<span>${escapeHtml(artistName)}</span>`)
+        : '';
+    const albumLabel = embedAlbumLabel && embedAlbumLabel !== artistName ? escapeHtml(embedAlbumLabel) : '';
+    const subtitleParts = [artistHTML, albumLabel].filter(Boolean).join(' • ');
+
+    container.innerHTML = `
+        <div class="jellyfin-audio-player">
+            ${closeButtonHTML}
+            <div class="jellyfin-mini-player">
+                ${artBlock}
+                <div class="jellyfin-mini-main">
+                    <div class="jellyfin-mini-meta">
+                        <div class="jellyfin-mini-title-row">
+                            <div class="jellyfin-mini-title">
+                                <a href="${jellyfinUrl}" target="_blank" rel="noopener">${escapeHtml(track.title)}</a>
+                            </div>
+                            <div class="jellyfin-mini-controls" data-jellyfin-controls>
+                                <button class="jellyfin-mini-control" data-action="previous" aria-label="Previous track" title="Previous track">⏮️</button>
+                                <button class="jellyfin-mini-control" data-action="toggle-play" aria-label="Play or pause" title="Play or pause">▶️</button>
+                                <button class="jellyfin-mini-control" data-action="next" aria-label="Next track" title="Next track">⏭️</button>
+                                <button class="jellyfin-mini-control ${STATE.jellyfinPlayback.repeatOne ? 'is-active' : ''}" data-action="repeat" aria-label="Repeat current track" title="Repeat current track">${STATE.jellyfinPlayback.repeatOne ? '🔂' : '🔁'}</button>
+                                <button class="jellyfin-mini-control" data-action="toggle-favorite" aria-label="Favorite track" title="Favorite track">☆</button>
+                                <button class="jellyfin-mini-control" data-action="shuffle-queue" aria-label="Shuffle current queue" title="Shuffle current queue">🔀</button>
+                                <button class="jellyfin-mini-control" data-action="shuffle-favorites" aria-label="Shuffle favorites" title="Shuffle favorites">💙</button>
+                                <button class="jellyfin-mini-control" data-action="queue-random-library" aria-label="Queue random library track" title="Queue random library track">✨</button>
+                            </div>
+                        </div>
+                        ${subtitleParts ? `<div class="jellyfin-mini-subtitle">${subtitleParts}</div>` : ''}
+                        <div class="jellyfin-mini-queue" data-jellyfin-queue-meta>${queueMetaText}</div>
+                    </div>
+                    <div class="jellyfin-mini-progress">
+                        <div class="jellyfin-mini-time" data-jellyfin-time>0:00 / --:--</div>
+                        <div class="jellyfin-mini-progress-track" data-jellyfin-progress>
+                            <div class="jellyfin-mini-progress-fill" data-jellyfin-progress-fill></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <audio id="jellyfin-audio-element" autoplay class="jellyfin-hidden-audio">
+                ${sources.map(source => `<source src="${source.url}" type="${source.type}">`).join('')}
+                Your browser doesn't support audio playback.
+            </audio>
+            <div class="jellyfin-player-status" data-jellyfin-status style="text-align:center; color:#888; min-height:1.5rem;"></div>
+        </div>
+    `;
+
+    attachJellyfinAudioEventHandlers(container, embedMode);
+
+    if (hasJellyfinUserId()) {
+        fetchJellyfinFavoriteStatus(track.jellyfinId).then(status => {
+            if (status === null || status === undefined) return;
+            track.isFavorite = Boolean(status);
+            STATE.jellyfinPlayback.isFavorite = track.isFavorite;
+            updateJellyfinFavoriteButtonState(container);
+        }).catch(() => {});
+    }
+}
+
+function attachJellyfinAudioEventHandlers(container, embedMode) {
+    const closeBtn = container.querySelector('.jellyfin-close-player');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', closeJellyfinPlayer);
+    }
+
+    const audioEl = container.querySelector('#jellyfin-audio-element');
+    if (audioEl) {
+        audioEl.addEventListener('ended', handleJellyfinTrackEnd);
+        audioEl.addEventListener('error', () => {
+            showJellyfinStatus('Playback failed, trying fallback...', 'error');
+        });
+        audioEl.addEventListener('timeupdate', () => updateJellyfinProgressUI(audioEl));
+        audioEl.addEventListener('durationchange', () => updateJellyfinProgressUI(audioEl));
+        audioEl.addEventListener('loadedmetadata', () => updateJellyfinProgressUI(audioEl));
+        audioEl.addEventListener('play', () => {
+            updateJellyfinPlayButtonState(container);
+            showJellyfinStatus('');
+        });
+        audioEl.addEventListener('pause', () => updateJellyfinPlayButtonState(container));
+        audioEl.play().catch(() => {
+            updateJellyfinPlayButtonState(container);
+        });
+        updateJellyfinProgressUI(audioEl);
+    }
+
+    container.querySelectorAll('[data-action="previous"]').forEach(btn => {
+        btn.addEventListener('click', () => playPreviousJellyfinTrack());
+    });
+    container.querySelectorAll('[data-action="next"]').forEach(btn => {
+        btn.addEventListener('click', () => playNextJellyfinTrack());
+    });
+    container.querySelectorAll('[data-action="toggle-play"]').forEach(btn => {
+        btn.addEventListener('click', () => toggleJellyfinPlayback());
+    });
+    container.querySelectorAll('[data-action="shuffle-queue"]').forEach(btn => {
+        btn.addEventListener('click', () => shuffleCurrentJellyfinQueue());
+    });
+    container.querySelectorAll('[data-action="toggle-favorite"]').forEach(btn => {
+        btn.addEventListener('click', () => toggleCurrentTrackFavorite());
+    });
+    container.querySelectorAll('[data-action="repeat"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            toggleJellyfinRepeatMode();
+            // Update button state without re-rendering entire player
+            // (re-rendering would restart audio playback)
+            const isActive = STATE.jellyfinPlayback.repeatOne;
+            btn.classList.toggle('is-active', isActive);
+            btn.textContent = isActive ? '🔂' : '🔁';
+        });
+    });
+    container.querySelectorAll('[data-action="shuffle-favorites"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            try {
+                await shuffleJellyfinFavorites();
+            } finally {
+                btn.disabled = false;
+            }
+        });
+    });
+    container.querySelectorAll('[data-action="queue-random-library"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            try {
+                await queueRandomLibraryTrackNext();
+            } finally {
+                btn.disabled = false;
+            }
+        });
+    });
+
+    const progressTrack = container.querySelector('[data-jellyfin-progress]');
+    if (progressTrack && audioEl) {
+        const seek = event => {
+            event.preventDefault();
+            handleJellyfinProgressSeek(event, audioEl);
+        };
+        progressTrack.addEventListener('click', seek);
+        progressTrack.addEventListener('mousedown', event => {
+            if (event.button !== 0) return;
+            event.preventDefault();
+            const moveHandler = moveEvent => handleJellyfinProgressSeek(moveEvent, audioEl);
+            const upHandler = () => {
+                window.removeEventListener('mousemove', moveHandler);
+                window.removeEventListener('mouseup', upHandler);
+            };
+            window.addEventListener('mousemove', moveHandler);
+            window.addEventListener('mouseup', upHandler);
+            handleJellyfinProgressSeek(event, audioEl);
+        });
+    }
+
+    updateJellyfinControlStates(container);
+    updateJellyfinPlayButtonState(container);
+
+    if (!embedMode) {
+        DOM.text.dataset.jellyfinActive = 'true';
+    }
+}
+
+function getJellyfinAudioElement() {
+    const container = getJellyfinPlaybackContainer();
+    if (!container) return null;
+    return container.querySelector('#jellyfin-audio-element');
+}
+
+function getJellyfinVideoElement() {
+    if (!DOM.text) return null;
+    return DOM.text.querySelector('.jellyfin-video-player video');
+}
+
+function handleJellyfinTrackEnd() {
+    if (STATE.jellyfinPlayback.repeatOne) {
+        const audioEl = getJellyfinAudioElement();
+        if (audioEl) {
+            audioEl.currentTime = 0;
+            audioEl.play().catch(error => {
+                console.warn('[Jellyfin] Unable to restart repeat playback:', error);
+            });
+        }
+        return;
+    }
+    playNextJellyfinTrack(true);
+}
+
+function playNextJellyfinTrack(autoAdvance = false) {
+    if (!STATE.jellyfinPlayback.queue.length) return;
+
+    const canAdvance = STATE.jellyfinPlayback.currentIndex < STATE.jellyfinPlayback.queue.length - 1;
+    if (!canAdvance) {
+        if (!autoAdvance) {
+            showJellyfinStatus('Reached end of queue');
+        }
+        return;
+    }
+
+    STATE.jellyfinPlayback.currentIndex += 1;
+    syncPlaybackFavoriteState();
+    renderJellyfinAudioPlayer();
+}
+
+function playPreviousJellyfinTrack() {
+    if (!STATE.jellyfinPlayback.queue.length) return;
+    if (STATE.jellyfinPlayback.currentIndex === 0) {
+        showJellyfinStatus('Already at start of queue');
+        return;
+    }
+    STATE.jellyfinPlayback.currentIndex -= 1;
+    syncPlaybackFavoriteState();
+    renderJellyfinAudioPlayer();
+}
+
+function toggleJellyfinRepeatMode() {
+    STATE.jellyfinPlayback.repeatOne = !STATE.jellyfinPlayback.repeatOne;
+    showJellyfinStatus(STATE.jellyfinPlayback.repeatOne ? 'Repeat enabled' : 'Repeat disabled');
+}
+
+function updateJellyfinControlStates(container) {
+    const playback = STATE.jellyfinPlayback;
+    const prevBtn = container.querySelector('[data-action="previous"]');
+    const nextBtn = container.querySelector('[data-action="next"]');
+    if (prevBtn) {
+        prevBtn.disabled = playback.currentIndex <= 0;
+    }
+    if (nextBtn) {
+        nextBtn.disabled = playback.currentIndex >= playback.queue.length - 1;
+    }
+    const repeatBtn = container.querySelector('[data-action="repeat"]');
+    if (repeatBtn) {
+        repeatBtn.classList.toggle('is-active', playback.repeatOne);
+        repeatBtn.textContent = playback.repeatOne ? '🔂' : '🔁';
+    }
+    const shuffleQueueBtn = container.querySelector('[data-action="shuffle-queue"]');
+    if (shuffleQueueBtn) {
+        shuffleQueueBtn.disabled = playback.queue.length < 2;
+    }
+    updateJellyfinFavoriteButtonState(container);
+    const queueMetaEl = container.querySelector('[data-jellyfin-queue-meta]');
+    if (queueMetaEl) {
+        queueMetaEl.textContent = playback.queue.length
+            ? `Track ${playback.currentIndex + 1} of ${playback.queue.length}`
+            : '';
+    }
+    updateJellyfinPlayButtonState(container);
+}
+
+function updateJellyfinFavoriteButtonState(container) {
+    if (!container) container = getJellyfinPlaybackContainer();
+    const favoriteBtn = container ? container.querySelector('[data-action="toggle-favorite"]') : null;
+    if (!favoriteBtn) return;
+    const track = getActiveJellyfinTrack();
+    const isFav = Boolean(track?.isFavorite);
+    favoriteBtn.classList.toggle('is-active', isFav);
+    favoriteBtn.textContent = isFav ? '⭐' : '☆';
+    favoriteBtn.title = isFav ? 'Remove from favorites' : 'Add to favorites';
+    favoriteBtn.setAttribute('aria-label', favoriteBtn.title);
+}
+
+let jellyfinStatusTimeoutId = null;
+
+function showJellyfinStatus(message, type = 'info') {
+    const container = getJellyfinPlaybackContainer();
+    if (!container) return;
+    const statusEl = container.querySelector('[data-jellyfin-status]');
+    if (!statusEl) return;
+
+    if (jellyfinStatusTimeoutId) {
+        clearTimeout(jellyfinStatusTimeoutId);
+        jellyfinStatusTimeoutId = null;
+    }
+
+    statusEl.textContent = message || '';
+    statusEl.style.color = type === 'error' ? '#ff8686' : '#888';
+
+    if (message) {
+        jellyfinStatusTimeoutId = setTimeout(() => {
+            statusEl.textContent = '';
+        }, 5000);
+    }
+}
+
+function showJellyfinVideoStatus(message, type = 'info') {
+    if (!DOM.text) return;
+    const statusEl = DOM.text.querySelector('[data-jellyfin-video-status]');
+    if (!statusEl) return;
+    statusEl.textContent = message || '';
+    statusEl.style.color = type === 'error' ? '#ff8686' : '#888';
+}
+
+function toggleJellyfinVideoFullscreen() {
+    const videoEl = getJellyfinVideoElement();
+    if (!videoEl) return false;
+
+    const currentFullscreen = document.fullscreenElement;
+    if (currentFullscreen === videoEl) {
+        if (document.exitFullscreen) {
+            document.exitFullscreen().catch(error => {
+                console.warn('[Jellyfin] Failed to exit fullscreen:', error);
+            });
+        }
+        showJellyfinVideoStatus('');
+        return true;
+    }
+
+    if (videoEl.paused) {
+        showJellyfinVideoStatus('Start playback to use fullscreen');
+        return false;
+    }
+
+    if (videoEl.requestFullscreen) {
+        const maybePromise = videoEl.requestFullscreen();
+        if (maybePromise && typeof maybePromise.then === 'function') {
+            maybePromise.then(() => {
+                showJellyfinVideoStatus('');
+            }).catch(error => {
+                console.warn('[Jellyfin] Fullscreen request failed:', error);
+                showJellyfinVideoStatus('Fullscreen blocked by the browser', 'error');
+            });
+        } else {
+            showJellyfinVideoStatus('');
+        }
+        return true;
+    }
+    return false;
+}
+
+function playJellyfinVideo(item) {
+    console.log('[Jellyfin] Playing video:', item);
+
+    // Update page title
+    if (DOM.pageTitleText) {
+        DOM.pageTitleText.textContent = item.title;
+    } else if (DOM.pageTitle) {
+        DOM.pageTitle.innerHTML = `<p>${escapeHtml(item.title)}</p>`;
+    }
+    DOM.subtitle.innerHTML = `<p>${escapeHtml(item.description)}</p>`;
+
+    const posterUrl = getJellyfinImageUrl(item.jellyfinId, { maxWidth: 960 });
+    const videoSources = buildJellyfinVideoSources(item.jellyfinId);
+    const jellyfinUrl = `${CONFIG.JELLYFIN_SERVER}/web/index.html#!/details?id=${item.jellyfinId}`;
+
+    DOM.text.innerHTML = `
+        <div class="jellyfin-video-player">
+            <div class="jellyfin-player-toolbar">
+                <button class="jellyfin-close-player jellyfin-control-button" style="flex:1; min-width:160px;">
+                    ← Back to Bookmarks
+                </button>
+                <a href="${jellyfinUrl}" target="_blank" class="jellyfin-open-link" style="flex:1; min-width:160px; text-align:center;">
+                    Open in Jellyfin
+                </a>
+            </div>
+            <video controls autoplay playsinline preload="metadata" poster="${posterUrl}" crossorigin="anonymous">
+                ${videoSources.map(source => `<source src="${source.url}" type="${source.type}">`).join('')}
+                Your browser doesn't support video playback.
+            </video>
+            <div class="jellyfin-player-status" data-jellyfin-video-status style="text-align:center; color:#888; min-height:1.5rem;"></div>
+        </div>
+    `;
+
+    // Mark that we have jellyfin content active
+    DOM.text.dataset.jellyfinActive = 'true';
+
+    // Add click handler for close button
+    setTimeout(() => {
+        const closeBtn = DOM.text.querySelector('.jellyfin-close-player');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', closeJellyfinPlayer);
+        }
+        const videoEl = DOM.text.querySelector('.jellyfin-video-player video');
+        if (videoEl) {
+            videoEl.addEventListener('playing', () => {
+                showJellyfinVideoStatus('');
+            });
+            videoEl.addEventListener('error', () => {
+                showJellyfinVideoStatus('Video failed to load. Try opening directly in Jellyfin.', 'error');
+            });
+            videoEl.play().catch(() => {
+                showJellyfinVideoStatus('Press play to start the video.');
+            });
+        }
+    }, 10);
+
+    DOM.overview.innerHTML = '';
+    showDefaultDock();
+}
+
+function playJellyfinAudio(item, options = {}) {
+    console.log('[Jellyfin] Playing audio:', item);
+
+    const embedMode = Boolean(options.mountSelector);
+    if (!embedMode) {
+        if (DOM.pageTitleText) {
+            DOM.pageTitleText.textContent = item.title;
+        } else if (DOM.pageTitle) {
+            DOM.pageTitle.innerHTML = `<p>${escapeHtml(item.title)}</p>`;
+        }
+        DOM.subtitle.innerHTML = `<p>${escapeHtml(item.description)}</p>`;
+    }
+
+    const queueItems = Array.isArray(options.queue) && options.queue.length > 0
+        ? options.queue
+        : [item];
+    const startIndex = Number.isFinite(options.startIndex) ? options.startIndex : 0;
+
+    setJellyfinQueue(queueItems, startIndex, {
+        context: options.context || (embedMode ? 'album' : 'single'),
+        mountSelector: options.mountSelector || null,
+        albumId: options.albumId || item.albumId || item.AlbumId || item.jellyfinId,
+        albumTitle: options.albumTitle || item.album || item.title,
+        sourceItem: item
+    });
+
+    renderJellyfinAudioPlayer();
+
+    if (!embedMode) {
+        DOM.overview.innerHTML = '';
+        showDefaultDock();
+    }
+}
+
+async function displayJellyfinSeries(item) {
+    console.log('[Jellyfin] Displaying series:', item);
+
+    if (DOM.pageTitleText) {
+        DOM.pageTitleText.textContent = item.title;
+    } else if (DOM.pageTitle) {
+        DOM.pageTitle.innerHTML = `<p>${escapeHtml(item.title)}</p>`;
+    }
+    DOM.subtitle.innerHTML = `<p>${escapeHtml(item.description)}</p>`;
+
+    try {
+        const showId = item.jellyfinId;
+        const [showDetails, showData] = await Promise.all([
+            fetch(`${CONFIG.JELLYFIN_SERVER}/Items/${showId}?api_key=${CONFIG.JELLYFIN_API_KEY}&Fields=Overview`)
+                .then(res => res.ok ? res.json() : null)
+                .catch(() => null),
+            fetchJellyfinShowData(showId)
+        ]);
+        const show = {
+            Id: showId,
+            Name: showDetails?.Name || item.title,
+            Overview: showDetails?.Overview || item.description || '',
+            ...showDetails
+        };
+        DOM.text.innerHTML = buildTvShowPanelHTML(show, showData.seasons, showData.nextUpEpisode, { includeBackButton: false });
+        const panel = DOM.text.querySelector('.jellyfin-tv-panel');
+        if (panel) {
+            setupTvPanelInteractions(panel, show);
+        }
+        DOM.overview.innerHTML = '';
+        showDefaultDock();
+    } catch (error) {
+        console.error('[Jellyfin] Unable to load series view:', error);
+        DOM.text.innerHTML = '<div style="padding:1rem; color:#f88;">Unable to load this series.</div>';
+    }
+}
+
+async function displayJellyfinAlbum(item) {
+    console.log('[Jellyfin] Displaying album/playlist:', item);
+
+    if (DOM.pageTitleText) {
+        DOM.pageTitleText.textContent = item.title;
+    } else if (DOM.pageTitle) {
+        DOM.pageTitle.innerHTML = `<p>${escapeHtml(item.title)}</p>`;
+    }
+    DOM.subtitle.innerHTML = `<p>${escapeHtml(item.description)}</p>`;
+
+    try {
+        const url = `${CONFIG.JELLYFIN_SERVER}/Items?ParentId=${item.jellyfinId}&SortBy=IndexNumber&Fields=UserData,AudioInfo&api_key=${CONFIG.JELLYFIN_API_KEY}`;
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Failed to load album tracks (${response.status})`);
+        }
+        const data = await response.json();
+        const tracks = Array.isArray(data.Items) ? data.Items : [];
+
+        const jellyfinUrl = `${CONFIG.JELLYFIN_SERVER}/web/index.html#!/details?id=${item.jellyfinId}`;
+        const albumArtUrl = getJellyfinImageUrl(item.jellyfinId, { maxWidth: 600 });
+        const playerId = `jellyfin-album-player-${item.jellyfinId}`;
+        const trackCount = tracks.length;
+        const totalRuntimeTicks = tracks.reduce((sum, track) => sum + (track.RunTimeTicks || 0), 0);
+        const totalRuntime = totalRuntimeTicks ? formatDuration(totalRuntimeTicks) : null;
+        const hasTracks = trackCount > 0;
+
+        const tracksHTML = hasTracks
+            ? tracks.map((track, index) => `
+                <button class="jellyfin-track" data-track-index="${index}">
+                    <span class="jellyfin-track-number">${track.IndexNumber || index + 1}</span>
+                    <div class="jellyfin-track-body">
+                        <div class="jellyfin-track-title">${escapeHtml(track.Name)}</div>
+                        ${track.RunTimeTicks ? `<div class="jellyfin-track-meta">${formatDuration(track.RunTimeTicks)}</div>` : ''}
+                    </div>
+                </button>
+            `).join('')
+            : `<div class="jellyfin-empty-state">No tracks available in this album.</div>`;
+
+        const albumHTML = `
+            <div class="jellyfin-album-view" data-album-id="${item.jellyfinId}">
+                <div class="jellyfin-album-hero">
+                    <img src="${albumArtUrl}" alt="Album art" class="jellyfin-album-cover" onerror="this.style.display='none'">
+                    <div class="jellyfin-album-meta">
+                        <h2 style="margin-bottom:0.5rem;">${escapeHtml(item.title)}</h2>
+                        ${item.description ? `<p style="color:#999;">${escapeHtml(item.description)}</p>` : ''}
+                        <div style="color:#bbb; font-size:0.95rem;">
+                            ${trackCount} track${trackCount === 1 ? '' : 's'}${totalRuntime ? ` • ${totalRuntime}` : ''}
+                        </div>
+                    </div>
+                </div>
+                <div id="${playerId}" class="jellyfin-album-player" data-embed-player></div>
+                <div class="jellyfin-playback-controls" data-album-controls>
+                    <button class="jellyfin-control-button" data-action="shuffle-album" ${hasTracks ? '' : 'disabled'}>🔀</button>
+                    <button class="jellyfin-control-button" data-action="play-all" ${hasTracks ? '' : 'disabled'}>▶️</button>
+                    <button class="jellyfin-control-button" data-action="album-prev" ${hasTracks ? '' : 'disabled'}>⏮️</button>
+                    <button class="jellyfin-control-button" data-action="album-next" ${hasTracks ? '' : 'disabled'}>⏭️</button>
+                </div>
+                <div class="jellyfin-tracklist">
+                    <h3 style="padding:0.75rem 1rem; margin:0;">Tracks</h3>
+                    ${tracksHTML}
+                </div>
+                <div style="text-align:center;">
+                    <a href="${jellyfinUrl}" target="_blank" class="jellyfin-open-link" style="display:inline-block; margin-top:1rem; padding:0.5rem 1rem; background:#4a9eff; color:#fff; border-radius:6px; text-decoration:none;">
+                        Open in Jellyfin
+                    </a>
+                </div>
+            </div>
+        `;
+
+        renderJellyfinHomeContent(albumHTML, { showBackButton: true });
+
+        if (!hasTracks) {
+            return;
+        }
+
+        const queueTracks = tracks.map(track => ({
+            ...track,
+            jellyfinType: 'Audio',
+            album: track.Album || item.title,
+            albumId: item.jellyfinId,
+            description: track.Album || item.title
+        }));
+        const playerSelector = `#${playerId}`;
+
+        const startAlbumPlayback = (playlist, startIndex = 0) => {
+            if (!playlist.length) {
+                showJellyfinStatus('No tracks to play', 'error');
+                return;
+            }
+            const safeIndex = Math.max(0, Math.min(startIndex, playlist.length - 1));
+            playJellyfinAudio(playlist[safeIndex], {
+                queue: playlist,
+                startIndex: safeIndex,
+                context: 'album',
+                mountSelector: playerSelector,
+                albumId: item.jellyfinId,
+                albumTitle: item.title
+            });
+        };
+
+        DOM.text.querySelectorAll('.jellyfin-track').forEach(trackEl => {
+            trackEl.addEventListener('click', () => {
+                const trackIndex = Number(trackEl.dataset.trackIndex);
+                startAlbumPlayback(queueTracks, Number.isFinite(trackIndex) ? trackIndex : 0);
+            });
+        });
+
+        const controlsEl = DOM.text.querySelector('[data-album-controls]');
+        if (controlsEl) {
+            controlsEl.addEventListener('click', event => {
+                const controlBtn = event.target.closest('.jellyfin-control-button');
+                if (!controlBtn || controlBtn.disabled) return;
+                const action = controlBtn.dataset.action;
+                switch (action) {
+                    case 'shuffle-album': {
+                        const shuffled = [...queueTracks];
+                        for (let i = shuffled.length - 1; i > 0; i -= 1) {
+                            const j = Math.floor(Math.random() * (i + 1));
+                            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+                        }
+                        startAlbumPlayback(shuffled, 0);
+                        break;
+                    }
+                    case 'play-all':
+                        startAlbumPlayback(queueTracks, 0);
+                        break;
+                    case 'album-prev':
+                        playPreviousJellyfinTrack();
+                        break;
+                    case 'album-next':
+                        playNextJellyfinTrack();
+                        break;
+                    default:
+                        break;
+                }
+            });
+        }
+    } catch (error) {
+        console.error('[Jellyfin] Error loading album tracks:', error);
+        DOM.text.innerHTML = '<div style="padding:1rem; color:#f88;">Failed to load tracks</div>';
+    }
+}
+
+async function displayJellyfinArtist(item) {
+    console.log('[Jellyfin] Displaying artist:', item);
+
+    if (DOM.pageTitleText) {
+        DOM.pageTitleText.textContent = item.title;
+    } else if (DOM.pageTitle) {
+        DOM.pageTitle.innerHTML = `<p>${escapeHtml(item.title)}</p>`;
+    }
+    DOM.subtitle.innerHTML = `<p>${escapeHtml(item.description)}</p>`;
+
+    const jellyfinUrl = `${CONFIG.JELLYFIN_SERVER}/web/index.html#!/details?id=${item.jellyfinId}`;
+    const artistImageUrl = getJellyfinImageUrl(item.jellyfinId, { maxWidth: 600 });
+
+    DOM.text.innerHTML = `
+        <div class="jellyfin-artist-page">
+            <div style="padding:2rem 0; text-align:center;">Loading artist…</div>
+        </div>
+    `;
+
+    try {
+        const [albums, artistDetails] = await Promise.all([
+            fetchJellyfinItemsByArtist(item.jellyfinId, {
+                IncludeItemTypes: 'MusicAlbum',
+                SortBy: 'ProductionYear,SortName',
+                Fields: 'PrimaryImageAspectRatio,ProductionYear',
+                Limit: '100'
+            }),
+            fetch(`${CONFIG.JELLYFIN_SERVER}/Items/${item.jellyfinId}?api_key=${CONFIG.JELLYFIN_API_KEY}`)
+                .then(res => (res.ok ? res.json() : null))
+                .catch(() => null)
+        ]);
+
+        const description = item.description || artistDetails?.Overview || '';
+
+        const albumsGrid = albums.length
+            ? albums.map((album, index) => {
+                const coverUrl = getJellyfinImageUrl(album.Id, { maxWidth: 400 });
+                const year = album.ProductionYear ? `<div style="color:#888; font-size:0.9rem;">${album.ProductionYear}</div>` : '';
+                return `
+                    <div class="jellyfin-artist-album" data-album-id="${album.Id}" data-album-index="${index}">
+                        <img src="${coverUrl}" alt="${escapeHtml(album.Name)} cover" onerror="this.style.display='none'">
+                        <div style="font-weight:600;">${escapeHtml(album.Name)}</div>
+                        ${year}
+                    </div>
+                `;
+            }).join('')
+            : `<div class="jellyfin-empty-state">No albums available for this artist.</div>`;
+
+        const artistHTML = `
+            <div class="jellyfin-artist-page">
+                <div class="jellyfin-artist-header">
+                    <img src="${artistImageUrl}" alt="${escapeHtml(item.title)} portrait" class="jellyfin-artist-image" onerror="this.style.display='none'">
+                    <h2 style="margin:0;">${escapeHtml(item.title)}</h2>
+                    ${description ? `<p style="color:#bbb; max-width:640px;">${escapeHtml(description)}</p>` : ''}
+                    <div class="jellyfin-playback-controls">
+                        <button class="jellyfin-control-button" data-action="shuffle-artist" ${albums.length ? '' : 'disabled'}>Shuffle All</button>
+                        <a href="${jellyfinUrl}" target="_blank" class="jellyfin-open-link" style="padding:0.65rem 1.4rem;">Open in Jellyfin</a>
+                    </div>
+                </div>
+                <div>
+                    <h3 style="margin-bottom:0.5rem;">Albums</h3>
+                    <div class="jellyfin-artist-albums">
+                        ${albumsGrid}
+                    </div>
+                </div>
+            </div>
+        `;
+
+        renderJellyfinHomeContent(artistHTML, { showBackButton: true });
+
+        const shuffleBtn = DOM.text.querySelector('[data-action="shuffle-artist"]');
+        if (shuffleBtn) {
+            shuffleBtn.addEventListener('click', async () => {
+                shuffleBtn.disabled = true;
+                try {
+                    await shuffleArtistTracks(item.jellyfinId, item.title);
+                } finally {
+                    shuffleBtn.disabled = false;
+                }
+            });
+        }
+
+        DOM.text.querySelectorAll('.jellyfin-artist-album').forEach(albumEl => {
+            albumEl.addEventListener('click', () => {
+                const albumId = albumEl.dataset.albumId;
+                const albumIndex = Number(albumEl.dataset.albumIndex);
+                const albumRecord = Number.isFinite(albumIndex) ? albums[albumIndex] : null;
+                const albumName = albumRecord?.Name || 'Album';
+                if (!albumId) return;
+                displayJellyfinAlbum({
+                    type: 'jellyfin',
+                    jellyfinType: 'MusicAlbum',
+                    jellyfinId: albumId,
+                    title: albumName,
+                    description: `${albumName} • ${item.title}`
+                });
+            });
+        });
+    } catch (error) {
+        console.error('[Jellyfin] Error loading artist:', error);
+        DOM.text.innerHTML = '<div style="padding:1rem; color:#f88;">Failed to load artist data</div>';
+        DOM.overview.innerHTML = '';
+        showDefaultDock();
+    }
+}
+
+async function displayJellyfinBook(item) {
+    console.log('[Jellyfin] Displaying book:', item);
+
+    if (DOM.pageTitleText) {
+        DOM.pageTitleText.textContent = item.title;
+    } else if (DOM.pageTitle) {
+        DOM.pageTitle.innerHTML = `<p>${escapeHtml(item.title)}</p>`;
+    }
+    DOM.subtitle.innerHTML = `<p>${escapeHtml(item.description)}</p>`;
+
+    try {
+        const detailsResponse = await fetch(`${CONFIG.JELLYFIN_SERVER}/Items/${item.jellyfinId}?api_key=${CONFIG.JELLYFIN_API_KEY}&Fields=Overview,Genres,PageCount,UserData`);
+        if (!detailsResponse.ok) {
+            throw new Error(`Failed to load book info (${detailsResponse.status})`);
+        }
+        const details = await detailsResponse.json();
+        const coverUrl = getJellyfinImageUrl(item.jellyfinId, { maxWidth: 600 });
+        const downloadUrl = `${CONFIG.JELLYFIN_SERVER}/Items/${item.jellyfinId}/Download?api_key=${CONFIG.JELLYFIN_API_KEY}`;
+        const viewerUrl = `https://docs.google.com/gview?embedded=1&url=${encodeURIComponent(downloadUrl)}`;
+        const totalPages = Number(details.PageCount) || null;
+        let currentPage = getJellyfinBookBookmark(item.jellyfinId) || 1;
+        if (totalPages) {
+            currentPage = Math.min(currentPage, totalPages);
+        }
+
+        DOM.text.innerHTML = `
+            <div class="jellyfin-book-viewer" data-book-id="${item.jellyfinId}">
+                <div class="jellyfin-book-toolbar">
+                    <div class="jellyfin-book-info">
+                        <div class="jellyfin-book-title">${escapeHtml(details.Name || item.title)}</div>
+                        ${details.Overview ? `<p class="jellyfin-book-overview">${escapeHtml(details.Overview)}</p>` : ''}
+                    </div>
+                    <div class="jellyfin-book-controls">
+                        <button class="jellyfin-control-button" data-action="book-prev">◀️ Prev</button>
+                        <div class="jellyfin-book-page" data-book-page>${totalPages ? `${currentPage} / ${totalPages}` : `${currentPage}`}</div>
+                        <button class="jellyfin-control-button" data-action="book-next">Next ▶️</button>
+                        <button class="jellyfin-control-button" data-action="book-bookmark">🔖 Bookmark</button>
+                    </div>
+                </div>
+                <div class="jellyfin-book-status" data-book-status></div>
+                <div class="jellyfin-book-status" data-book-status></div>
+                <div class="jellyfin-book-frame">
+                    <iframe src="${viewerUrl}#page=${currentPage}" data-book-frame loading="lazy"></iframe>
+                </div>
+            </div>
+        `;
+
+        DOM.overview.innerHTML = `
+            <div style="padding:1rem;">
+                ${coverUrl ? `<img src="${coverUrl}" alt="Book Cover" style="max-width:200px; width:50%; border-radius:10px; margin-bottom:1rem;" onerror="this.style.display='none'">` : ''}
+                ${details.Genres && details.Genres.length ? `<p><strong>Genres:</strong> ${escapeHtml(details.Genres.join(', '))}</p>` : ''}
+            </div>
+        `;
+        showDefaultDock();
+
+        const viewerEl = DOM.text.querySelector('.jellyfin-book-viewer');
+        if (viewerEl) {
+            const frame = viewerEl.querySelector('[data-book-frame]');
+            const pageLabel = viewerEl.querySelector('[data-book-page]');
+            const prevBtn = viewerEl.querySelector('[data-action="book-prev"]');
+            const nextBtn = viewerEl.querySelector('[data-action="book-next"]');
+            const bookmarkBtn = viewerEl.querySelector('[data-action="book-bookmark"]');
+            const statusEl = viewerEl.querySelector('[data-book-status]');
+
+            const clampPage = page => {
+                if (totalPages) {
+                    return Math.min(Math.max(1, page), totalPages);
+                }
+                return Math.max(1, page);
+            };
+
+            const updatePage = (newPage, saveBookmark = false) => {
+                currentPage = clampPage(newPage);
+                if (frame) {
+                    frame.src = `${viewerUrl}#page=${currentPage}`;
+                }
+                if (pageLabel) {
+                    pageLabel.textContent = totalPages ? `${currentPage} / ${totalPages}` : `${currentPage}`;
+                }
+                if (saveBookmark) {
+                    setJellyfinBookBookmark(item.jellyfinId, currentPage);
+                    if (statusEl) {
+                        statusEl.textContent = 'Bookmark saved';
+                        setTimeout(() => {
+                            if (statusEl.textContent === 'Bookmark saved') {
+                                statusEl.textContent = '';
+                            }
+                        }, 4000);
+                    }
+                }
+            };
+
+            if (prevBtn) {
+                prevBtn.addEventListener('click', () => updatePage(currentPage - 1, true));
+            }
+            if (nextBtn) {
+                nextBtn.addEventListener('click', () => updatePage(currentPage + 1, true));
+            }
+            if (bookmarkBtn) {
+                bookmarkBtn.addEventListener('click', () => {
+                    setJellyfinBookBookmark(item.jellyfinId, currentPage);
+                    if (statusEl) {
+                        statusEl.textContent = 'Bookmark saved';
+                        setTimeout(() => {
+                            if (statusEl.textContent === 'Bookmark saved') {
+                                statusEl.textContent = '';
+                            }
+                        }, 4000);
+                    }
+                });
+            }
+        }
+    } catch (error) {
+        console.error('[Jellyfin] Unable to display book:', error);
+        const jellyfinUrl = `${CONFIG.JELLYFIN_SERVER}/web/index.html#!/details?id=${item.jellyfinId}`;
+        DOM.text.innerHTML = `
+            <div style="padding:1rem; text-align:center;">
+                <p>Unable to embed this book. Click below to open it in Jellyfin.</p>
+                <a href="${jellyfinUrl}" target="_blank" class="jellyfin-open-link" style="display:inline-block; padding:0.5rem 1rem; background:#4a9eff; color:#fff; border-radius:6px; text-decoration:none; margin-top:1rem;">
+                    Open in Jellyfin
+                </a>
+            </div>
+        `;
+        DOM.overview.innerHTML = '';
+        showDefaultDock();
+    }
+}
+
+function openInJellyfin(itemId) {
+    const url = `${CONFIG.JELLYFIN_SERVER}/web/index.html#!/details?id=${itemId}`;
+    window.open(url, '_blank');
+    exitSearchMode();
+}
+
+function closeJellyfinPlayer() {
+    console.log('[Jellyfin] Closing player, returning to bookmarks');
+
+    // Remove jellyfin active marker
+    delete DOM.text.dataset.jellyfinActive;
+    resetJellyfinPlaybackState();
+
+    // Restore bookmarks
+    displayBookmarksTree();
+}
+
+function formatDuration(ticks) {
+    // Jellyfin uses ticks (10,000 ticks = 1 millisecond)
+    const seconds = Math.floor(ticks / 10000000);
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+}
+
+function formatJellyfinEpisodeLabel(episode) {
+    const season = Number.isFinite(episode?.ParentIndexNumber) ? episode.ParentIndexNumber : null;
+    const ep = Number.isFinite(episode?.IndexNumber) ? episode.IndexNumber : null;
+    if (season == null && ep == null) return '';
+    const seasonPart = season != null ? `S${season.toString().padStart(2, '0')}` : '';
+    const episodePart = ep != null ? `E${ep.toString().padStart(2, '0')}` : '';
+    return `${seasonPart}${episodePart}`;
 }
 
 // ============================================================================

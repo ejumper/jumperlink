@@ -23,6 +23,6 @@ https://media.jumperlink.net/web/#/tv.html?topParentId=4514ec850e5ad0c47b58444e1
 live tv
 https://media.jumperlink.net/web/#/livetv.html?collectionType=livetv "live tv" "livetv.webp"
 music
-https://media.jumperlink.net/web/#/livetv.html?tab=2&serverId=ca51be806e1245acaeb85fb6cc174783https://media.jumperlink.net/web/#/music.html?topParentId=7e64e319657a9516ec78490da03edccb&collectionType=music "music" "music.svg"
+https://media.jumperlink.net/web/#/livetv.html?tab=2&serverId=ca51be806e1245acaeb85fb6cc174783https://media.jumperlink.net/web/#/music.html?topParentId=7e64e319657a9516ec78490da03edccb&collectionType=music "music" "music.webp"
 rss
 https://media.jumperlink.net/web/#/livetv.html?tab=2&serverId=ca51be806e1245acaeb85fb6cc174783https://media.jumperlink.net/web/#/music.html?topParentId=7e64e319657a9516ec78490da03edccb&collectionType=music "rss" "rss.svg"

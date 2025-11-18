@@ -30,20 +30,23 @@
 <body>
     <top>
         <header>
-            <search-container>
-                <button class="search-trigger" aria-label="Open search"><img src="icons/search.svg" alt="Search" class="search-icon"></button>
-            </search-container>
-            <main-text>
-                <page-title>
-                    <div class="page-title-display">
-                        <p>Title or Search</p>
-                    </div>
-                    <input type="text" id="searchbox" class="page-title-input" placeholder="Search...">
-                </page-title>
-                <subtitle><p>subtitle</p></subtitle>
-            </main-text>
+            <div class="header-main">
+                <search-container>
+                    <button class="search-trigger" aria-label="Open search"><img src="icons/search.svg" alt="Search" class="search-icon"></button>
+                </search-container>
+                <main-text>
+                    <page-title>
+                        <div class="page-title-display">
+                            <p>Title or Search</p>
+                        </div>
+                        <input type="text" id="searchbox" class="page-title-input" placeholder="Search...">
+                    </page-title>
+                    <subtitle><p>subtitle</p></subtitle>
+                </main-text>
+            </div>
+            
         </header>
-        <overview></overview>
+        <overview><div class="header-active-bar" aria-live="polite" aria-label="Active timers"></div></overview>
     </top>
     <bottom>
         <text></text>
