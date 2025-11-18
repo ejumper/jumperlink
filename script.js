@@ -3950,13 +3950,9 @@ function enterSearchMode(clearInput = false) {
                 <span>Google Images</span>
             </a>
             <a href="https://www.perplexity.ai/search?q=${encodedQuery}" target="_blank">
-                <img src="icons/perplexity.webp" alt="Perplexity" style="width:24px; height:24px; flex-shrink:0;">
+                <img src="icons/perplexity.svg" alt="Perplexity" style="width:24px; height:24px; flex-shrink:0;">
                 <span>Perplexity AI</span>
             </a>
-            <button type="button" class="quick-timer-btn">
-                <img src="icons/timer.webp" alt="Timer" style="width:24px; height:24px; flex-shrink:0;">
-                <span>Add Timer</span>
-            </button>
         </div>
     `;
 }
