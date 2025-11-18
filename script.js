@@ -46,6 +46,7 @@ const LOCAL_STORAGE_KEYS = {
 const FALLBACK_FAVICON = 'icons/web.webp';
 const INVIDIOUS_EMBED_HOSTS = ['inv.nadeko.net', 'yewtu.be', 'invidious.f5.si'];
 const HTML_ENTITY_PARSER = typeof document !== 'undefined' ? document.createElement('textarea') : null;
+const BLUESKY_POST_CACHE = new Map();
 
 function isInvidiousHost(hostname) {
     if (!hostname) return false;
@@ -2792,6 +2793,7 @@ function displayFeed() {
     attachLoadMoreHandler();
     syncTimerPanelState();
     refreshDesktopVideoEmbeds();
+    hydrateBlueskyEmbeds();
 }
 
 function getFeedControlsHTML() {
@@ -3100,6 +3102,200 @@ function refreshDesktopVideoEmbeds() {
     });
 }
 
+async function hydrateBlueskyEmbeds() {
+    if (typeof document === 'undefined') return;
+    const cards = Array.from(document.querySelectorAll('.feed-item[data-bsky-uri]'))
+        .filter(card => card.dataset.bskyUri && card.dataset.bskyHydrated !== 'true');
+    if (!cards.length) return;
+
+    const cardsByUri = new Map();
+    cards.forEach(card => {
+        const uri = card.dataset.bskyUri;
+        if (!uri) return;
+        if (!cardsByUri.has(uri)) {
+            cardsByUri.set(uri, []);
+        }
+        cardsByUri.get(uri).push(card);
+    });
+
+    const uniqueUris = Array.from(cardsByUri.keys());
+    const chunkSize = 20;
+    for (let index = 0; index < uniqueUris.length; index += chunkSize) {
+        const chunk = uniqueUris.slice(index, index + chunkSize);
+        const postsMap = await fetchBlueskyPosts(chunk);
+        chunk.forEach(uri => {
+            const post = postsMap.get(uri);
+            const relatedCards = cardsByUri.get(uri) || [];
+            relatedCards.forEach(card => {
+                card.dataset.bskyHydrated = 'true';
+                const target = card.querySelector('[data-bsky-embed]');
+                if (!target) return;
+                const html = renderBlueskyEmbedHtml(post);
+                if (html) {
+                    target.innerHTML = html;
+                    target.classList.add('bluesky-rich-embed--visible');
+                } else {
+                    target.remove();
+                }
+            });
+        });
+    }
+}
+
+async function fetchBlueskyPosts(uris = []) {
+    const result = new Map();
+    if (!uris.length) return result;
+
+    const missing = uris.filter(uri => !BLUESKY_POST_CACHE.has(uri));
+    if (missing.length) {
+        const params = missing.map(uri => `uris=${encodeURIComponent(uri)}`).join('&');
+        try {
+            const response = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.feed.getPosts?${params}`);
+            if (!response.ok) {
+                throw new Error(`Bluesky API error: ${response.status}`);
+            }
+            const data = await response.json();
+            (data?.posts || []).forEach(post => {
+                if (post?.uri) {
+                    BLUESKY_POST_CACHE.set(post.uri, post);
+                }
+            });
+            missing.forEach(uri => {
+                if (!BLUESKY_POST_CACHE.has(uri)) {
+                    BLUESKY_POST_CACHE.set(uri, null);
+                }
+            });
+        } catch (error) {
+            console.warn('Unable to load Bluesky embeds', error);
+            missing.forEach(uri => {
+                if (!BLUESKY_POST_CACHE.has(uri)) {
+                    BLUESKY_POST_CACHE.set(uri, null);
+                }
+            });
+        }
+    }
+
+    uris.forEach(uri => {
+        result.set(uri, BLUESKY_POST_CACHE.get(uri) || null);
+    });
+    return result;
+}
+
+function renderBlueskyEmbedHtml(post) {
+    if (!post || !post.embed) return '';
+    return renderBlueskyEmbedView(post.embed);
+}
+
+function renderBlueskyEmbedView(embed) {
+    if (!embed || typeof embed !== 'object') return '';
+    switch (embed.$type) {
+        case 'app.bsky.embed.external#view':
+            return renderBlueskyExternalCard(embed.external);
+        case 'app.bsky.embed.images#view':
+            return renderBlueskyImages(embed.images);
+        case 'app.bsky.embed.record#view':
+            return renderBlueskyRecord(embed.record);
+        case 'app.bsky.embed.recordWithMedia#view':
+            return `${renderBlueskyEmbedView(embed.media)}${renderBlueskyRecord(embed.record)}`;
+        case 'app.bsky.embed.video#view':
+            return renderBlueskyVideo(embed);
+        default:
+            return '';
+    }
+}
+
+function renderBlueskyExternalCard(external) {
+    if (!external) return '';
+    const host = safeHostname(external.uri);
+    return `
+        <a class="bluesky-link-card" href="${escapeHtml(external.uri)}" target="_blank" rel="noopener noreferrer">
+            ${external.thumb ? `<img src="${escapeHtml(external.thumb)}" alt="" class="bluesky-link-thumb" loading="lazy">` : ''}
+            <div class="bluesky-link-details">
+                ${external.title ? `<div class="bluesky-link-title">${escapeHtml(external.title)}</div>` : ''}
+                ${external.description ? `<p class="bluesky-link-description">${escapeHtml(external.description)}</p>` : ''}
+                ${host ? `<span class="bluesky-link-host">${escapeHtml(host)}</span>` : ''}
+            </div>
+        </a>
+    `;
+}
+
+function renderBlueskyImages(images) {
+    if (!Array.isArray(images) || !images.length) return '';
+    return `
+        <div class="bluesky-image-grid bluesky-image-grid--${Math.min(images.length, 4)}">
+            ${images.map(image => `
+                <a href="${escapeHtml(image.fullsize || image.thumb || '')}" target="_blank" rel="noopener noreferrer" class="bluesky-image">
+                    <img src="${escapeHtml(image.thumb || image.fullsize || '')}" alt="${escapeHtml(image.alt || '')}" loading="lazy">
+                </a>
+            `).join('')}
+        </div>
+    `;
+}
+
+function renderBlueskyRecord(record) {
+    if (!record) return '';
+    const authorName = record.author?.displayName || record.author?.handle || 'Bluesky user';
+    const handle = record.author?.handle ? `@${record.author.handle}` : '';
+    const href = buildBskyPermalink(record.uri, record.author?.handle);
+    const textHtml = renderBlueskyRichText(record.value);
+    const nestedEmbeds = Array.isArray(record.embeds)
+        ? record.embeds.map(renderBlueskyEmbedView).join('')
+        : '';
+
+    return `
+        <a class="bluesky-quote-card" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">
+            <div class="bluesky-quote-header">
+                ${record.author?.avatar ? `<img src="${escapeHtml(record.author.avatar)}" alt="" class="bluesky-quote-avatar">` : ''}
+                <div>
+                    <div class="bluesky-quote-name">${escapeHtml(authorName)}</div>
+                    ${handle ? `<div class="bluesky-quote-handle">${escapeHtml(handle)}</div>` : ''}
+                </div>
+            </div>
+            ${textHtml ? `<p class="bluesky-quote-text">${textHtml}</p>` : ''}
+            ${nestedEmbeds}
+        </a>
+    `;
+}
+
+function renderBlueskyVideo(embed) {
+    const url = embed?.playlist;
+    if (!url) return '';
+    return `
+        <div class="bluesky-video">
+            <video controls preload="metadata" ${embed.thumbnail ? `poster="${escapeHtml(embed.thumbnail)}"` : ''}>
+                <source src="${escapeHtml(url)}" type="application/x-mpegURL">
+            </video>
+        </div>
+    `;
+}
+
+function renderBlueskyRichText(value) {
+    if (!value || !value.text) return '';
+    const escaped = escapeHtml(value.text);
+    return escaped.replace(/\n/g, '<br>');
+}
+
+function buildBskyPermalink(uri, handle) {
+    if (!uri) return '';
+    const segments = uri.split('/');
+    const postId = segments[segments.length - 1];
+    if (handle) {
+        return `https://bsky.app/profile/${handle}/post/${postId}`;
+    }
+    const did = segments[2];
+    return `https://bsky.app/profile/${did}/post/${postId}`;
+}
+
+function safeHostname(url) {
+    if (!url) return '';
+    try {
+        const parsed = new URL(url);
+        return parsed.hostname.replace(/^www\./, '');
+    } catch (error) {
+        return '';
+    }
+}
+
 function createFeedCard(item) {
     // Extract domain for favicon
     let domain = '';
@@ -3138,9 +3334,16 @@ function createFeedCard(item) {
     const showTitle = shouldDisplayFeedTitle(normalizedTitle);
     const rawExcerpt = CONFIG.SHOW_POST_CONTENT ? getFeedExcerpt(item.body) : '';
     const excerpt = shouldDisplayFeedExcerpt(rawExcerpt, normalizedTitle, domain, feedName) ? rawExcerpt : '';
+    const isBluesky = isBlueskySource(domain, feedName, item.url);
+    const bskyUri = isBluesky && item.guid && item.guid.startsWith('at://') ? item.guid : null;
+    const useApiBlueskyEnhancements = Boolean(bskyUri);
     const media = extractFeedMedia(item);
     const timestamp = formatPublishDate(item.pubDate);
     const metrics = extractEngagementMetrics(item);
+    const blueskyExtras = useApiBlueskyEnhancements ? null : extractBlueskyEnhancements(item, safeItemUrl, domain, feedName);
+    const blueskyEmbedPlaceholder = useApiBlueskyEnhancements
+        ? '<div class="bluesky-rich-embed" data-bsky-embed></div>'
+        : '';
     const isUnread = isItemUnread(item);
     const titleMarkup = showTitle ? `
             <a href="${safeItemUrl}"
@@ -3174,8 +3377,6 @@ function createFeedCard(item) {
             </div>
         </div>
     `;
-    const blueskyExtras = extractBlueskyEnhancements(item, safeItemUrl, domain, feedName);
-
     const isStarred = Boolean(item.starred);
     const starButton = `
         <button class="feed-star-btn ${isStarred ? 'is-starred' : ''}"
@@ -3189,6 +3390,7 @@ function createFeedCard(item) {
 
     return `
         <article class="feed-item ${isUnread ? '' : 'feed-item--read'}"
+                 ${bskyUri ? `data-bsky-uri="${escapeHtml(bskyUri)}"` : ''}
                  data-link="${safeItemUrl}"
                  data-item-id="${item.id}"
                  data-unread="${isUnread}">
@@ -3203,8 +3405,10 @@ function createFeedCard(item) {
             </div>
             ${titleMarkup}
             ${excerpt ? `<p class="feed-excerpt"><a href="${safeItemUrl}" class="feed-excerpt-link">${escapeHtml(excerpt)}</a></p>` : ''}
-            ${(!blueskyExtras || !blueskyExtras.hasRichMedia) && media ? `<div class="${buildMediaClassList(media)}">${media.markup}</div>` : ''}
-            ${blueskyExtras ? `${blueskyExtras.attachmentsHtml || ''}${blueskyExtras.quoteHtml || ''}` : ''}
+            ${blueskyEmbedPlaceholder}
+            ${(!useApiBlueskyEnhancements && (!blueskyExtras || !blueskyExtras.hasRichMedia) && media)
+                ? `<div class="${buildMediaClassList(media)}">${media.markup}</div>` : ''}
+            ${!useApiBlueskyEnhancements && blueskyExtras ? `${blueskyExtras.attachmentsHtml || ''}${blueskyExtras.quoteHtml || ''}` : ''}
             ${metrics ? `
                 <div class="feed-metrics">
                     ${metrics.map(metric => `
