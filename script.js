@@ -1307,7 +1307,7 @@ function updateTimeBasedBackground(now) {
         backgroundImage = 'backgrounds/dawn.png';
     } else if (hour >= 8 && hour < 18) {
         // 08:00 to 18:00 - Day
-        backgroundImage = 'backgrounds/day.jpg';
+        backgroundImage = 'backgrounds/nighy.jpg';
     } else {
         // 18:00 to 20:00 - Sunset
         backgroundImage = 'backgrounds/dawn.jpg';
