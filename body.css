@@ -62,81 +62,67 @@
 
     /* Color scheme variables */
     --bg-primary: black;
-    --bg-secondary: #0c0c0c;
-    --bg-tertiary: #111;
-    --bg-overlay: rgba(0, 0, 0, 0.7);
-    --bg-card: rgba(12, 16, 28, 0.85);
-    --bg-transparent: rgba(0, 0, 0, 0);
-    --bg-semi: rgba(0, 0, 0, 0.5);
-    --bg-semi-light: rgba(0, 0, 0, 0.55);
-    --bg-hover: #2a2a2a;
-    --bg-input: #111;
-    --timer-panel-bg: hsla(232, 52%, 6%, 0);
-    --timer-card-bg: hsla(227, 46%, 8%, 0);
-    --timer-border: rgba(126, 147, 255, 0);
-    --timer-border-soft: rgba(126, 147, 255, 0);
-    --timer-accent: #9fb2ff;
-    --timer-accent-strong: #e3e7ff;
-    --timer-accent-muted: rgba(187, 197, 255, 0.75);
-    --timer-progress-track: rgba(126, 147, 255, 0.18);
-    --timer-progress-fill: linear-gradient(90deg, rgba(126, 147, 255, 0.35), rgba(191, 142, 255, 0.75));
-    --bg-timer-panel: var(--timer-panel-bg);
-    --bg-timer-list: var(--timer-card-bg);
-    --bg-finished: rgba(47, 24, 4, 0.25);
-    --bg-feed-controls: rgba(0, 0, 0, 0);
-    --bg-folder-btn: rgba(6, 8, 15, 0);
-    --bg-load-more: #131313;
+    --bg-overlay: hsla(0, 0%, 0%, 0.6);
+    --bg-card: hsla(225, 40%, 8%, 0.85);
+    --bg-transparent: hsla(0, 0%, 0%, 0);
+    --bg-primary-soft: hsla(230, 100%, 75%, 0);
+    --timer-accent: hsl(240, 100%, 81%);
+    --timer-accent-strong: hsl(240, 100%, 95%);
+    --timer-accent-muted: hsla(240, 100%, 87%, 0.75);
+    --timer-progress-track: hsla(240, 100%, 75%, 0.18);
+    --timer-progress-fill: linear-gradient(90deg, hsla(230, 100%, 75%, 0.35), hsla(266, 100%, 78%, 0.75));
+    --bg-timer-panel: var(--bg-primary);
+    --bg-timer-list: var(--bg-primary);
+    
 
     --text-primary: white;
     --text-secondary: #dfe6ff;
     --text-tertiary: #cfd3db;
-    --text-muted: rgba(255, 255, 255, 0.5);
+    --text-muted: hsla(0, 0%, 100%, 0.5);
     --text-gray: #c7c7c7;
     --text-light-blue: #f1f5ff;
 
     --border-primary: #444;
     --border-secondary: #333;
-    --border-light: rgba(255, 255, 255, 0.1);
-    --border-lighter: rgba(255, 255, 255, 0.06);
-    --border-input: rgba(255, 255, 255, 0.15);
-    --border-feed: rgba(255, 255, 255, 0.1);
+    --border-light: hsla(0, 0%, 100%, 0.1);
+    --border-lighter: hsla(0, 0%, 100%, 0.06);
+    --border-input: hsla(0, 0%, 100%, 0.15);
+    --border-feed: hsla(0, 0%, 100%, 0.1);
     --border-bookmark: hsl(230, 50%, 30%);
 
-    --infobox-bg: #1a1a1a;
+    --infobox-bg: hsl(0, 0%, 10%);
 
     /* Hover effect variables */
-    --hover-bg: rgba(74, 158, 255, 0.1);
+    --hover-bg: hsla(212, 100%, 65%, 0.1);
     --hover-scale: 1.05;
     --hover-transition: transform 0.2s ease, background 0.15s ease;
 }
 
 @media (prefers-color-scheme: light) {
     :root {
-        --bg-primary: white;
-        --bg-secondary: #f5f5f5;
-        --bg-tertiary: #eeeeee;
-        --bg-overlay: rgba(255, 255, 255, 0.9);
-        --bg-card: rgba(245, 248, 255, 0.95);
+        --bg-primary: hsl(0, 0%, 100%);
+        --bg-overlay: hsla(0, 0%, 100%, 0.9);
+        --bg-card: hsla(222, 100%, 98%, 0.95);
         --bg-transparent: rgba(255, 255, 255, 0);
-        --bg-semi: rgba(255, 255, 255, 0.7);
-        --bg-semi-light: rgba(255, 255, 255, 0.75);
-        --bg-hover: #e8e8e8;
-        --bg-input: #fafafa;
-        --timer-panel-bg: rgba(245, 248, 255, 0.95);
-        --timer-card-bg: rgba(250, 252, 255, 0.9);
-        --timer-border: rgba(86, 108, 255, 0.4);
-        --timer-border-soft: rgba(86, 108, 255, 0.15);
+        --bg-overlay: hsla(0, 0%, 100%, 0.7);
+        --bg-overlay: rgba(255, 255, 255, 0.75);
+        --bg-primary: hsl(0, 0%, 91%);
+        --bg-primary: hsl(0, 0%, 98%);
+        --bg-primary: hsla(222, 100%, 98%, 0.95);
+        --bg-primary: hsla(216, 100%, 99%, 0.9);
+        --bg-primary: hsla(232, 100%, 67%, 0.4);
+        --bg-primary-soft: rgba(86, 108, 255, 0.15);
         --timer-accent: #4a4ec2;
         --timer-accent-strong: #262b70;
         --timer-accent-muted: rgba(38, 43, 112, 0.65);
         --timer-progress-track: rgba(86, 108, 255, 0.15);
         --timer-progress-fill: linear-gradient(90deg, rgba(86, 108, 255, 0.35), rgba(150, 110, 255, 0.65));
-        --bg-timer-panel: var(--timer-panel-bg);
-        --bg-timer-list: var(--timer-card-bg);
-        --bg-finished: rgba(255, 245, 229, 0.95);
-        --bg-feed-controls: rgba(255, 255, 255, 0);
-        --bg-folder-btn: rgba(248, 250, 255, 0.8);
-        --bg-load-more: #f8f8f8;
+        --bg-timer-panel: var(--bg-primary);
+        --bg-timer-list: var(--bg-primary);
+        --bg-primary: rgba(255, 245, 229, 0.95);
+        --bg-primary: rgba(255, 255, 255, 0);
+        --bg-primary: rgba(248, 250, 255, 0.8);
+        --bg-primary: #f8f8f8;
 
         --text-primary: black;
         --text-secondary: #1a1a2e;
@@ -388,7 +374,7 @@ body {
 
 top {
     grid-area: top;
-    outline: 2px solid hsla(90, 100%, 50%, var(--outline));
+    outline: 2px solid hsla(240, 100%, 50%, var(--outline));
     display: grid;
     grid-template-rows: auto 1fr;
     grid-template-areas:
@@ -401,7 +387,7 @@ top {
 
 bottom {
     grid-area: bottom;
-    outline: 2px solid hsla(220, 100%, 50%, var(--outline));
+    outline: 2px solid hsla(240, 100%, 50%, var(--outline));
     display: grid;
     grid-template-rows: auto 1fr;
     grid-template-areas:
@@ -415,7 +401,7 @@ bottom {
 
 header {
     grid-area: header;
-    outline: 2px solid hsla(20, 100%, 50%, var(--outline));
+    outline: 2px solid hsla(240, 100%, 50%, var(--outline));
     display: grid;
     grid-template-columns: 1fr;
     grid-template-areas: "main-text";
@@ -638,7 +624,7 @@ body.task-modal-open {
 }
 
 .quick-search-links a:hover {
-    background: var(--bg-hover);
+    background: var(--bg-primary);
 }
 
 .quick-task-btn {
@@ -659,7 +645,7 @@ body.task-modal-open {
 }
 
 .quick-task-btn:hover {
-    background: var(--bg-hover);
+    background: var(--bg-primary);
 }
 
 .quick-search-links img {
@@ -689,7 +675,7 @@ body.task-modal-open {
 
 .task-modal-dialog {
     position: relative;
-    background: var(--bg-secondary);
+    background: var(--bg-primary);
     border: 1px solid #cac8ff;
     border-radius: 12px;
     padding: 1.5rem;
@@ -749,7 +735,7 @@ body.task-modal-open {
 
 #task-form input,
 #task-form textarea {
-    background: var(--bg-input);
+    background: var(--bg-primary);
     border: 1px solid var(--border-primary);
     color: var(--text-primary);
     padding: 0.5rem;
@@ -987,15 +973,16 @@ dock {
     display: flex;
     background: linear-gradient(
         180deg,
-        hsla(231, 50%, 47%, 0.08) 0%,
-        hsla(231, 61%, 47%, 0.2) 100%
+        hsla(231, 100%, 23%, 0.05) 0%,
+        hsla(231, 100%, 50%, 0.01) 100%
     );
     flex-direction: column;
     gap: 0.5rem;
     padding: .5rem 1rem;
     margin-top: auto;
-    border-radius: 10px;
-    border: 1px solid hsl(240, 100%, 15%);
+    border-top-left-radius: 15px;
+    border-top-right-radius: 15px;
+    border: 1px solid hsl(219, 60%, 41%);
     filter: drop-shadow(0px -1px 12px hsl(198, 100%, 15%));
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
@@ -1049,7 +1036,7 @@ dock {
     display: flex;
     gap: 0.4rem;
     align-items: center;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid hsla(240, 0%, 100%, 0.05);
     padding-bottom: 0.3rem;
 }
 
@@ -1060,7 +1047,7 @@ dock {
     padding: 0.4rem 0.9rem;
     border-radius: 999px;
     border: 1px solid transparent;
-    background: hsla(0, 0%, 100%, 0.05);
+    background: hsla(240, 0%, 100%, 0.05);
     color: var(--timer-accent-muted);
     font-size: 0.85rem;
     font-weight: 600;
@@ -1076,7 +1063,7 @@ dock {
 .timer-tab-btn.is-active {
     background: #7e93ff26;
     color: var(--timer-accent-strong);
-    border-color: var(--timer-border);
+    border-color: var(--bg-primary);
     box-shadow: 0 0 10px rgba(126, 147, 255, 0.2);
 }
 
@@ -1154,7 +1141,7 @@ dock {
 .timer-chip {
     padding: 0.48rem 0.95rem;
     border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid hsla(240, 0%, 100%, 0.1);
     background: rgba(255, 255, 255, 0.04);
     color: var(--timer-accent-muted);
     font-size: 0.8rem;
@@ -1216,7 +1203,7 @@ dock {
     width: 100%;
     padding: 0.55rem;
     background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid hsla(240, 0%, 100%, 0.08);
     border-radius: 12px;
     color: var(--timer-accent-strong);
     font-size: 0.85rem;
@@ -1227,7 +1214,7 @@ dock {
     width: 100%;
     padding: 0.6rem 0.75rem;
     background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid hsla(240, 0%, 100%, 0.08);
     border-radius: 12px;
     color: var(--timer-accent-strong);
     transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
@@ -1266,7 +1253,7 @@ dock {
     gap: 0.5rem;
     padding: 0.55rem 0.75rem;
     background: rgba(13, 18, 34, 0.8);
-    border: 1px solid rgba(94, 120, 255, 0.25);
+    border: 1px solid hsla(240, 100%, 68%, 0.25);
     border-radius: 12px;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
@@ -1291,7 +1278,7 @@ dock {
 
 .timer-interval-name:focus {
     outline: none;
-    border-color: var(--timer-border);
+    border-color: var(--bg-primary);
 }
 
 .timer-interval-duration {
@@ -1322,7 +1309,7 @@ dock {
     flex: 0 0 auto;
     padding: 0.7rem 1.5rem;
     border-radius: 999px;
-    border: 1px solid rgba(126, 147, 255, 0.6);
+    border: 1px solid hsla(240, 100%, 75%, 0.6);
     background: linear-gradient(135deg, rgba(126, 147, 255, 0.35), rgba(191, 142, 255, 0.35));
     color: var(--timer-accent-strong);
     font-weight: 700;
@@ -1345,8 +1332,8 @@ dock {
     padding: 1rem;
     margin-bottom: 0.4rem;
     border-radius: 12px;
-    background: var(--timer-card-bg);
-    border: 1px solid rgba(94, 120, 255, 0.3);
+    background: var(--bg-primary);
+    border: 1px solid hsla(240, 100%, 68%, 0.3);
     position: relative;
     overflow: hidden;
     color: var(--timer-accent-strong);
@@ -1449,7 +1436,7 @@ dock {
     width: 1.2rem;
     height: 1.2rem;
     border-radius: 0.35rem;
-    border: 1px solid rgba(255, 255, 255, 0.4);
+    border: 1px solid hsla(240, 0%, 100%, 0.4);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1488,7 +1475,7 @@ dock {
     width: 2.4rem;
     height: 2.4rem;
     border-radius: 50%;
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    border: 1px solid hsla(240, 0%, 100%, 0.12);
     background: rgba(255, 255, 255, 0.05);
     color: var(--timer-accent-strong);
     font-size: 0.85rem;
@@ -1517,7 +1504,7 @@ dock {
 
 .timer-interval-toggle.is-open {
     background: rgba(126, 147, 255, 0.2);
-    border-color: var(--timer-border);
+    border-color: var(--bg-primary);
     transform: rotate(180deg);
 }
 
@@ -1526,7 +1513,7 @@ dock {
     margin-top: 0.4rem;
     padding: 0.6rem;
     border-radius: 12px;
-    border: 1px solid var(--timer-border-soft);
+    border: 1px solid var(--bg-primary-soft);
     background: rgba(9, 14, 27, 0.85);
     max-height: 320px;
     overflow: auto;
@@ -1542,7 +1529,7 @@ dock {
     justify-content: space-between;
     gap: 0.5rem;
     padding: 0.4rem 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    border-bottom: 1px solid hsla(240, 0%, 100%, 0.06);
 }
 
 .timer-interval-detail:last-child {
@@ -1574,7 +1561,7 @@ dock {
 
 .timer-interval-detail-name:focus {
     outline: none;
-    border-color: var(--timer-border);
+    border-color: var(--bg-primary);
 }
 
 .timer-interval-detail-duration {
@@ -1583,7 +1570,7 @@ dock {
 }
 
 .timer-row--running {
-    border-color: var(--timer-border);
+    border-color: var(--bg-primary);
     box-shadow: 0 0 0 1px rgba(126, 147, 255, 0.25), 0 15px 28px rgba(0, 0, 0, 0.45);
 }
 .timer-row--finishing {
@@ -1591,7 +1578,7 @@ dock {
 }
 
 .timer-row--finished {
-    background: var(--bg-finished);
+    background: var(--bg-primary);
     border-color: rgba(255, 196, 143, 0.7);
     color: #ffe0c0;
 }
@@ -1651,14 +1638,14 @@ dock {
 }
 
 .view-toggle-chip.is-active {
-    border: 1px solid hsla(218, 100%, 62%, 1);
+    border: 1px solid hsla(240, 100%, 62%, 1);
     background: var(--background);
 }
 
 .timer-toggle-btn {
     padding: 0.35rem 0.9rem;
     background: rgba(255, 255, 255, 0.02);
-    border: 1px solid var(--timer-border-soft);
+    border: 1px solid var(--bg-primary-soft);
     border-radius: 999px;
     color: var(--timer-accent-strong);
     font-size: 0.9rem;
@@ -1669,12 +1656,12 @@ dock {
 .timer-toggle-btn.active {
     background: rgba(255, 0, 0, 0.2);
     color: var(--timer-accent-strong);
-    border-color: var(--timer-border);
+    border-color: var(--bg-primary);
     box-shadow: 0 0 12px rgba(126, 147, 255, 0.3);
 }
 
 .timer-toggle-btn:hover {
-    border-color: var(--timer-border);
+    border-color: var(--bg-primary);
     color: var(--timer-accent-strong);
     background: rgba(126, 147, 255, 0.15);
 }
@@ -1739,7 +1726,7 @@ dock {
 .feed-load-more {
     border-radius: 999px;
     padding: 0.4rem 1.1rem;
-    border: 1px solid rgba(255, 255, 255, 0.25);
+    border: 1px solid hsla(240, 0%, 100%, 0.25);
     background: rgba(17, 32, 64, 0.6);
     color: #f3f6ff;
     cursor: pointer;
@@ -1764,7 +1751,7 @@ dock {
 
 .feed-load-more {
     padding: 0.6rem 1.5rem;
-    background: var(--bg-load-more);
+    background: var(--bg-primary);
     border: 2px solid hsl(230, 70%, 50%);
     border-radius: 999px;
     color: #4a9eff;
@@ -1787,7 +1774,7 @@ dock {
 
 .feed-item {
     background: linear-gradient(0deg, hsla(228, 49%, 43%, 0.4) 0%, hsla(230, 46%, 26%, 0.2) 1.5%, hsla(230, 54%, 25%, 0.1) 5%, hsla(230, 59%, 18%, 0.1) 95%, hsla(230, 74%, 17%, 0.2) 97%, hsla(231, 67%, 22%, 0.4) 100%);
-    border: 1px solid hsla(233, 100%, 74%, 0.25);
+    border: 1px solid hsla(240, 100%, 74%, 0.25);
     border-radius: 12px;
     padding: 0.85rem;
     box-shadow: 0 0px 4px hsla(230, 100%, 14%, 0.5);
@@ -1837,7 +1824,7 @@ dock {
 }
 
 .feed-top-link:focus-visible {
-    outline: 2px solid rgba(74, 158, 255, 0.6);
+    outline: 2px solid hsla(240, 100%, 65%, 0.6);
     outline-offset: 4px;
     border-radius: 14px;
 }
@@ -1872,13 +1859,14 @@ dock {
     height: 36px;
     border-radius: 12px;
     object-fit: cover;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid hsla(240, 0%, 100%, 0.2);
+    background: hsla(0, 0%, 100%, 0.02);
 }
 
 .feed-avatar--custom {
     object-fit: contain;
     border-color: transparent;
+    border: none;
     background: transparent;
     box-sizing: border-box;
     padding: 2px;
@@ -1957,8 +1945,63 @@ dock {
     margin-top: 0.75rem;
     border-radius: 14px;
     overflow: hidden;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid hsla(0, 0%, 100%, 0.08);
     background: rgba(255, 255, 255, 0.02);
+}
+
+.bluesky-attachments {
+    margin-top: 0.75rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 0.5rem;
+}
+
+.bluesky-attachment {
+    display: block;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.bluesky-attachment img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.bluesky-videos {
+    margin-top: 0.75rem;
+    display: grid;
+    gap: 0.6rem;
+}
+
+.bluesky-videos video,
+.lemmy-video-embed video {
+    width: 100%;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(0, 0, 0, 0.4);
+}
+
+.lemmy-video-embed {
+    margin-top: 0.75rem;
+}
+
+.bluesky-quote {
+    margin-top: 0.65rem;
+    padding: 0.65rem 0.85rem;
+    border-radius: 14px;
+    border: 1px solid rgba(148, 178, 255, 0.25);
+    background: rgba(74, 158, 255, 0.08);
+    color: var(--text-color, #dfe8ff);
+}
+
+.bluesky-quote-author {
+    font-size: 0.85rem;
+    color: rgba(159, 178, 255, 0.9);
+    margin-bottom: 0.35rem;
 }
 
 .feed-media--image {
@@ -2036,6 +2079,58 @@ dock {
 .feed-video-link:hover .feed-video-play-icon {
     transform: scale(1.08);
     filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.75));
+}
+
+.feed-video-responsive {
+    position: relative;
+    width: 100%;
+}
+
+.feed-video-link--mobile {
+    width: 100%;
+}
+
+.feed-video-embed {
+    display: none;
+    margin-top: 0.75rem;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(0, 0, 0, 0.6);
+    position: relative;
+}
+
+.feed-video-embed::before {
+    content: '';
+    display: block;
+    padding-top: 56.25%;
+}
+
+.feed-video-embed iframe {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    border-radius: 12px;
+    background: #000;
+}
+
+.desktop-video-embeds .feed-video-embed {
+    display: block;
+}
+
+.desktop-video-embeds .feed-video-link--mobile {
+    display: none !important;
+}
+
+.desktop-video-embeds .feed-media--link {
+    width: 100%;
+    max-width: none;
+}
+
+.desktop-video-embeds .feed-media--link .feed-video-embed {
+    margin-top: 0.35rem;
 }
 
 .feed-metrics {
@@ -2327,7 +2422,7 @@ overview img {
     backdrop-filter: blur(18px) saturate(120%);
     -webkit-backdrop-filter: blur(18px) saturate(120%);
     border-radius: 14px;
-    border: 1px solid rgba(126, 147, 255, 0.25);
+    border: 1px solid hsla(240, 100%, 75%, 0.25);
     box-shadow: 0 20px 35px rgba(0, 0, 0, 0.35);
     
 }
@@ -2343,14 +2438,14 @@ overview img {
     -webkit-backdrop-filter: blur(20px) saturate(125%);
     padding: 1.5rem;
     border-radius: 16px;
-    border: 1px solid rgba(126, 147, 255, 0.35);
+    border: 1px solid hsla(240, 100%, 75%, 0.35);
     box-shadow: 0 30px 45px rgba(0, 0, 0, 0.45);
 }
 
 .wiki-toc {
     background: transparent !important;
     border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid hsla(240, 0%, 100%, 0.08);
     padding: 0.75rem;
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
@@ -2359,21 +2454,21 @@ overview img {
 
 /* Keyboard Navigation Highlight */
 .nav-highlight {
-    outline: 2px solid #4a9eff !important;
+    outline: 2px solid hsl(240, 100%, 50%) !important;
     outline-offset: 2px;
-    background: rgba(74, 158, 255, 0.15) !important;
+    background: hsla(240, 100%, 65%, 0.15) !important;
     border-radius: 4px;
     position: relative;
     z-index: 10;
 }
 
 .suggestion-item.nav-highlight {
-    background: rgba(74, 158, 255, 0.2) !important;
+    background: hsla(240, 100%, 65%, 0.2) !important;
 }
 
 .feed-item.nav-highlight {
-    background: rgba(74, 158, 255, 0.1) !important;
-    border-color: hsl(226, 85%, 31%) !important;
+    background: hsla(240, 100%, 65%, 0.1) !important;
+    border-color: hsl(240, 85%, 31%) !important;
 }
 
 .bookmark-link.nav-highlight {
@@ -2402,18 +2497,3 @@ dock a.nav-highlight {
     background: rgba(74, 158, 255, 0.2) !important;
     transition: transform 0.15s ease, background 0.15s ease;
 }
-
-/* Development outlines - remove in production */
-/* Uncomment the following to remove colored outlines */
-/*
-top { outline: none !important; }
-bottom { outline: none !important; }
-header { outline: none !important; }
-main-text { outline: none !important; }
-page-title { outline: none !important; }
-subtitle { outline: none !important; }
-overview { outline: none !important; }
-text { outline: none !important; }
-links { outline: none !important; }
-dock { outline: none !important; }
-*/

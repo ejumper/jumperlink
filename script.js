@@ -641,6 +641,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Set up keyboard navigation
     setupKeyboardNavigation();
 
+    window.addEventListener('resize', refreshDesktopVideoEmbeds);
+    refreshDesktopVideoEmbeds();
+
     console.log('[Jumperlink] Dashboard ready');
 });
 
@@ -1202,7 +1205,7 @@ function updateTimeBasedBackground(now) {
         backgroundImage = 'backgrounds/dawn.jpg';
     } else if (hour >= 8 && hour < 18) {
         // 08:00 to 18:00 - Day
-        backgroundImage = 'backgrounds/day.jpeg';
+        backgroundImage = 'backgrounds/day.jpg';
     } else {
         // 18:00 to 20:00 - Sunset
         backgroundImage = 'backgrounds/dawn.jpg';
@@ -2746,6 +2749,7 @@ function displayFeed() {
         attachTimerControlHandlers();
         renderTimerLists();
         syncTimerPanelState();
+        refreshDesktopVideoEmbeds();
         return;
     }
 
@@ -2762,6 +2766,7 @@ function displayFeed() {
         attachTimerControlHandlers();
         renderTimerLists();
         syncTimerPanelState();
+        refreshDesktopVideoEmbeds();
         return;
     }
 
@@ -2786,6 +2791,7 @@ function displayFeed() {
     attachRefreshHandler();
     attachLoadMoreHandler();
     syncTimerPanelState();
+    refreshDesktopVideoEmbeds();
 }
 
 function getFeedControlsHTML() {
@@ -2882,6 +2888,218 @@ function isItemUnread(item) {
     return Boolean(item.unread);
 }
 
+function buildSourceSignature(domain, feedName, url) {
+    return `${domain || ''} ${feedName || ''} ${url || ''}`.toLowerCase();
+}
+
+function isBlueskySource(domain, feedName, url) {
+    const signature = buildSourceSignature(domain, feedName, url);
+    return signature.includes('bluesky') || signature.includes('bsky');
+}
+
+function isLemmySource(domain, feedName, url) {
+    const signature = buildSourceSignature(domain, feedName, url);
+    return signature.includes('lemmy');
+}
+
+function extractQuoteText(node) {
+    if (!node) return '';
+    const clone = node.cloneNode(true);
+    clone.querySelectorAll('script, style').forEach(el => el.remove());
+    clone.querySelectorAll('img, video, source').forEach(el => el.remove());
+    clone.innerHTML = clone.innerHTML.replace(/<br\s*\/?>/gi, '\n');
+    return stripHtml(clone.innerHTML);
+}
+
+function isLikelyBlueskyAvatar(src, img) {
+    if (!src) return true;
+    if (src.startsWith('data:')) return true;
+    const lower = src.toLowerCase();
+    if (/avatar|profile|icon|emoji/.test(lower)) return true;
+    const classes = (img?.className || '').toLowerCase();
+    if (classes && /avatar|emoji|icon/.test(classes)) return true;
+    const alt = (img?.getAttribute('alt') || '').toLowerCase();
+    if (alt && /avatar|emoji/.test(alt)) return true;
+    const width = parseInt(img?.getAttribute('width') || '', 10);
+    if (Number.isFinite(width) && width <= 80) return true;
+    return false;
+}
+
+function isLikelyVideoUrl(url) {
+    if (!url) return false;
+    const plain = url.split('?')[0].toLowerCase();
+    return /\.(mp4|webm|mov|m4v|mkv)$/i.test(plain);
+}
+
+function guessVideoMime(url) {
+    if (!url) return 'video/mp4';
+    const plain = url.split('?')[0].toLowerCase();
+    if (plain.endsWith('.webm')) return 'video/webm';
+    if (plain.endsWith('.mov')) return 'video/quicktime';
+    if (plain.endsWith('.m4v')) return 'video/mp4';
+    if (plain.endsWith('.mkv')) return 'video/x-matroska';
+    return 'video/mp4';
+}
+
+function extractBlueskyEnhancements(item, safeItemUrl, domain, feedName) {
+    if (!item?.body) return null;
+    if (!isBlueskySource(domain, feedName, item?.url)) return null;
+
+    const parser = document.createElement('div');
+    parser.innerHTML = item.body;
+
+    const imageAttachments = [];
+    const seenSources = new Set();
+
+    parser.querySelectorAll('img').forEach(img => {
+        const src = img.getAttribute('data-src') || img.getAttribute('src');
+        if (!src || seenSources.has(src) || isLikelyBlueskyAvatar(src, img)) return;
+        seenSources.add(src);
+        imageAttachments.push({
+            src,
+            alt: img.getAttribute('alt') || ''
+        });
+    });
+
+    const videoSources = [];
+    const pushVideo = (src) => {
+        if (!src || seenSources.has(src) || !isLikelyVideoUrl(src)) return;
+        seenSources.add(src);
+        videoSources.push(src);
+    };
+
+    parser.querySelectorAll('video, video source, source').forEach(node => {
+        pushVideo(node.getAttribute('src'));
+    });
+    parser.querySelectorAll('a[href]').forEach(link => pushVideo(link.getAttribute('href')));
+
+    let attachmentsHtml = '';
+    if (imageAttachments.length) {
+        attachmentsHtml = `
+            <div class="bluesky-attachments bluesky-attachments--${Math.min(imageAttachments.length, 4)}">
+                ${imageAttachments.slice(0, 4).map(img => `
+                    <a class="bluesky-attachment" href="${safeItemUrl}">
+                        <img src="${escapeHtml(img.src)}" alt="${escapeHtml(img.alt || '')}" loading="lazy">
+                    </a>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    let videosHtml = '';
+    if (videoSources.length) {
+        videosHtml = `
+            <div class="bluesky-videos">
+                ${videoSources.slice(0, 2).map(src => `
+                    <video controls preload="metadata">
+                        <source src="${escapeHtml(src)}" type="${guessVideoMime(src)}">
+                    </video>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    let quoteHtml = '';
+    const quoteNode = parser.querySelector('blockquote, .quote, .quoted-post, .quote-card');
+    if (quoteNode) {
+        const quoteText = extractQuoteText(quoteNode);
+        const citeLink = quoteNode.querySelector('cite a[href], a[href]');
+        let citeMarkup = '';
+        if (citeLink) {
+            const href = citeLink.getAttribute('href');
+            const label = citeLink.textContent.trim() || href;
+            if (href) {
+                citeMarkup = `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`;
+            } else if (label) {
+                citeMarkup = `<span>${escapeHtml(label)}</span>`;
+            }
+        }
+        if (quoteText) {
+            quoteHtml = `
+                <div class="bluesky-quote">
+                    ${citeMarkup ? `<div class="bluesky-quote-author">${citeMarkup}</div>` : ''}
+                    <p>${escapeHtml(quoteText)}</p>
+                </div>
+            `;
+        }
+    }
+
+    if (!attachmentsHtml && !videosHtml && !quoteHtml) return null;
+    return {
+        attachmentsHtml: attachmentsHtml + videosHtml,
+        quoteHtml,
+        hasRichMedia: Boolean(imageAttachments.length || videoSources.length)
+    };
+}
+
+function extractLemmyVideo(temp) {
+    if (!temp) return null;
+    const directVideo = temp.querySelector('video');
+    let src = null;
+    if (directVideo) {
+        src = directVideo.getAttribute('src') || directVideo.querySelector('source')?.getAttribute('src');
+    }
+    if (!src) {
+        const videoLink = Array.from(temp.querySelectorAll('a[href]')).find(link => isLikelyVideoUrl(link.getAttribute('href')));
+        if (videoLink) {
+            src = videoLink.getAttribute('href');
+        }
+    }
+    if (!src || !isLikelyVideoUrl(src)) return null;
+
+    const posterImg = temp.querySelector('img');
+    const poster = posterImg ? (posterImg.getAttribute('src') || posterImg.getAttribute('data-src')) : null;
+
+    return {
+        variant: 'video',
+        markup: `
+            <div class="lemmy-video-embed">
+                <video controls preload="metadata" ${poster ? `poster="${escapeHtml(poster)}"` : ''}>
+                    <source src="${escapeHtml(src)}" type="${guessVideoMime(src)}">
+                </video>
+            </div>
+        `
+    };
+}
+
+function shouldUseDesktopVideoEmbeds() {
+    const coarse = window.matchMedia ? window.matchMedia('(pointer: coarse)').matches : false;
+    const width = window.innerWidth || document.documentElement.clientWidth || 0;
+    return !coarse && width >= 900;
+}
+
+let pendingVideoEmbedRefresh = null;
+function refreshDesktopVideoEmbeds() {
+    if (pendingVideoEmbedRefresh) return;
+    pendingVideoEmbedRefresh = requestAnimationFrame(() => {
+        pendingVideoEmbedRefresh = null;
+        const preferEmbed = shouldUseDesktopVideoEmbeds();
+        if (document.body) {
+            document.body.classList.toggle('desktop-video-embeds', preferEmbed);
+        }
+        document.querySelectorAll('.feed-video-embed[data-embed-src]').forEach(container => {
+            const iframe = container.querySelector('iframe');
+            if (preferEmbed) {
+                if (!iframe) {
+                    const src = container.dataset.embedSrc;
+                    if (!src) return;
+                    const frame = document.createElement('iframe');
+                    frame.src = src;
+                    frame.loading = 'lazy';
+                    frame.allowFullscreen = true;
+                    frame.setAttribute('allowfullscreen', 'true');
+                    frame.setAttribute('allow', 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share');
+                    frame.referrerPolicy = 'no-referrer';
+                    frame.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-popups allow-popups-to-escape-sandbox allow-forms');
+                    container.appendChild(frame);
+                }
+            } else if (iframe) {
+                iframe.remove();
+            }
+        });
+    });
+}
+
 function createFeedCard(item) {
     // Extract domain for favicon
     let domain = '';
@@ -2956,6 +3174,7 @@ function createFeedCard(item) {
             </div>
         </div>
     `;
+    const blueskyExtras = extractBlueskyEnhancements(item, safeItemUrl, domain, feedName);
 
     const isStarred = Boolean(item.starred);
     const starButton = `
@@ -2984,7 +3203,8 @@ function createFeedCard(item) {
             </div>
             ${titleMarkup}
             ${excerpt ? `<p class="feed-excerpt"><a href="${safeItemUrl}" class="feed-excerpt-link">${escapeHtml(excerpt)}</a></p>` : ''}
-            ${media ? `<div class="${buildMediaClassList(media)}">${media.markup}</div>` : ''}
+            ${(!blueskyExtras || !blueskyExtras.hasRichMedia) && media ? `<div class="${buildMediaClassList(media)}">${media.markup}</div>` : ''}
+            ${blueskyExtras ? `${blueskyExtras.attachmentsHtml || ''}${blueskyExtras.quoteHtml || ''}` : ''}
             ${metrics ? `
                 <div class="feed-metrics">
                     ${metrics.map(metric => `
@@ -3009,10 +3229,21 @@ function getFeedExcerpt(body) {
 
 function extractFeedMedia(item) {
     if (!item) return null;
+    let domain = '';
+    try {
+        domain = new URL(item.url).hostname.toLowerCase();
+    } catch (error) {
+        domain = '';
+    }
 
     const temp = item.body ? document.createElement('div') : null;
     if (temp) {
         temp.innerHTML = item.body;
+    }
+
+    const lemmyVideo = isLemmySource(domain, item.feedTitle, item.url) ? extractLemmyVideo(temp) : null;
+    if (lemmyVideo) {
+        return lemmyVideo;
     }
 
     const videoResult = findEmbeddableVideoUrl(item, temp);
@@ -3042,9 +3273,12 @@ function extractFeedMedia(item) {
         return {
             variant: 'link',
             markup: `
-                <a href="${escapeHtml(watchUrl)}" class="feed-video-link" style="display: flex; align-items: center; justify-content: center; text-align: center; min-height: 200px; padding: 2rem; ${backgroundStyle} border-radius: 12px; text-decoration: none; transition: all 0.2s ease; position: relative; overflow: hidden;">
-                    <img src="icons/play.svg" alt="Play" class="feed-video-play-icon">
-                </a>
+                <div class="feed-video-responsive">
+                    <a href="${escapeHtml(watchUrl)}" class="feed-video-link feed-video-link--mobile" style="display: flex; align-items: center; justify-content: center; text-align: center; min-height: 200px; padding: 2rem; ${backgroundStyle} border-radius: 12px; text-decoration: none; transition: all 0.2s ease; position: relative; overflow: hidden;">
+                        <img src="icons/play.svg" alt="Play" class="feed-video-play-icon">
+                    </a>
+                    <div class="feed-video-embed" data-embed-src="${escapeHtml(videoResult.embedUrl)}"></div>
+                </div>
             `
         };
     }
