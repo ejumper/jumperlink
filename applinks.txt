@@ -15,3 +15,14 @@ openwebui
 https://chat.jumperlink.net "ollama" "ollama.svg"
 flowise
 https://ai.jumperlink.net "flowise" "flowise.webp"
+
+movies
+https://media.jumperlink.net/web/#/movies.html?topParentId=f137a2dd21bbc1b99aa5c0f6bf02a805&collectionType=movies "movies" "movies.svg"
+tv
+https://media.jumperlink.net/web/#/tv.html?topParentId=4514ec850e5ad0c47b58444e17b6346c&collectionType=tvshows "tv" "tv.svg"
+live tv
+https://media.jumperlink.net/web/#/livetv.html?collectionType=livetv "live tv" "livetv.webp"
+music
+https://media.jumperlink.net/web/#/livetv.html?tab=2&serverId=ca51be806e1245acaeb85fb6cc174783https://media.jumperlink.net/web/#/music.html?topParentId=7e64e319657a9516ec78490da03edccb&collectionType=music "music" "music.svg"
+rss
+https://media.jumperlink.net/web/#/livetv.html?tab=2&serverId=ca51be806e1245acaeb85fb6cc174783https://media.jumperlink.net/web/#/music.html?topParentId=7e64e319657a9516ec78490da03edccb&collectionType=music "rss" "rss.svg"

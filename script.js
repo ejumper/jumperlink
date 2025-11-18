@@ -25,7 +25,7 @@ const CONFIG = {
 
     // Settings
     INITIAL_FEED_ITEMS: 20, // Initial feed load
-    FEED_ITEMS_PER_PAGE: 10, // Items to load per "load more" click
+    FEED_ITEMS_PER_PAGE: 20, // Items per page when viewing all articles
     SUGGESTION_LIMIT: { wikipedia: 5, bookmarks: 5, trakt: 5 },
     DEBOUNCE_MS: 300,
     UPDATE_TIME_INTERVAL: 1000, // Update clock every second
@@ -46,6 +46,12 @@ const LOCAL_STORAGE_KEYS = {
 const FALLBACK_FAVICON = 'icons/web.webp';
 const INVIDIOUS_EMBED_HOSTS = ['inv.nadeko.net', 'yewtu.be', 'invidious.f5.si'];
 const HTML_ENTITY_PARSER = typeof document !== 'undefined' ? document.createElement('textarea') : null;
+
+function isInvidiousHost(hostname) {
+    if (!hostname) return false;
+    const host = hostname.toLowerCase();
+    return INVIDIOUS_EMBED_HOSTS.some(allowed => host === allowed || host.endsWith(`.${allowed}`)) || host.includes('invidious');
+}
 
 // ============================================================================
 // STATE MANAGEMENT
@@ -79,6 +85,7 @@ const STATE = {
     folders: [], // Nextcloud News folders
     feeds: [], // Nextcloud News feeds
     selectedFolder: null, // null = all feeds, otherwise folder ID
+    showStarredOnly: false,
     feedViewFilter: 'unviewed', // 'unviewed' or 'all'
     latestItems: [],
     pendingReadMarks: new Set(),
@@ -101,9 +108,10 @@ const STATE = {
     autoRepeatQueue: new Set(),
     localIntervalTimers: [],
     localIntervalRuntimeMap: new Map(),
-    feedOffset: 0, // Pagination offset for feed items
-    feedHasMore: true, // Whether more items are available to load
-    feedLoading: false, // Loading state for load more button
+    feedOffset: 0,
+    feedHasMore: true,
+    feedLoading: false,
+    pendingStarToggles: new Set(),
 
     // Keyboard navigation state
     navigationMode: null, // null, 'search', 'bookmarks', 'applinks', 'feed'
@@ -719,15 +727,39 @@ function handleGlobalKeydown(e) {
 
     // Handle arrow keys and Enter when in navigation mode
     if (STATE.navigationMode) {
-        if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            navigateDown();
-            return;
-        }
-        if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            navigateUp();
-            return;
+        // Special handling for feed navigation (left/right for buttons, up/down for items)
+        if (STATE.navigationMode === 'feed') {
+            if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                navigateFeedLeft();
+                return;
+            }
+            if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                navigateFeedRight();
+                return;
+            }
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                navigateFeedDown();
+                return;
+            }
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                navigateFeedUp();
+                return;
+            }
+        } else {
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                navigateDown();
+                return;
+            }
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                navigateUp();
+                return;
+            }
         }
         if (e.key === 'Enter') {
             e.preventDefault();
@@ -774,23 +806,68 @@ function handleGlobalKeydown(e) {
             }
             break;
         case 'r':
-            if (!isInputFocused) {
+            if (STATE.timerPanelVisible) {
+                e.preventDefault();
+                closeTimerPanel();
+            } else if (!isInputFocused) {
                 e.preventDefault();
                 enterFeedNavigationMode();
+            }
+            break;
+        case 't':
+            if (!isInputFocused) {
+                e.preventDefault();
+                if (STATE.timerPanelVisible) {
+                    closeTimerPanel();
+                } else {
+                    openTimerPanel();
+                }
             }
             break;
     }
 }
 
 function enterBookmarkNavigationMode() {
-    const bookmarkLinks = document.querySelectorAll('.bookmark-link');
-    if (bookmarkLinks.length === 0) {
+    // Select both folder summaries and bookmark links that are visible
+    const bookmarkTree = document.querySelector('.bookmark-tree');
+    if (!bookmarkTree) {
+        console.log('[Navigation] No bookmark tree found');
+        return;
+    }
+
+    // Get all visible navigable items (summaries for folders, links for bookmarks)
+    const items = [];
+    const collectVisibleItems = (container) => {
+        const children = container.children;
+        for (let i = 0; i < children.length; i++) {
+            const child = children[i];
+            if (child.tagName === 'DETAILS') {
+                // Add the summary (folder)
+                const summary = child.querySelector(':scope > summary');
+                if (summary) {
+                    items.push(summary);
+                }
+                // If open, collect children
+                if (child.open) {
+                    const childrenContainer = child.querySelector('.bookmark-children');
+                    if (childrenContainer) {
+                        collectVisibleItems(childrenContainer);
+                    }
+                }
+            } else if (child.classList.contains('bookmark-link')) {
+                items.push(child);
+            }
+        }
+    };
+    collectVisibleItems(bookmarkTree);
+
+    if (items.length === 0) {
         console.log('[Navigation] No bookmarks to navigate');
         return;
     }
 
     STATE.navigationMode = 'bookmarks';
-    STATE.navigationItems = Array.from(bookmarkLinks);
+    STATE.navigationItems = items;
     STATE.navigationIndex = 0;
     updateNavigationHighlight();
     console.log('[Navigation] Bookmark navigation mode activated');
@@ -811,17 +888,28 @@ function enterApplinkNavigationMode() {
 }
 
 function enterFeedNavigationMode() {
+    // Get filter buttons (view toggle and folder buttons)
+    const filterButtons = document.querySelectorAll('.feed-folder-menu button, .feed-folder-menu .view-toggle-chip');
     const feedItems = document.querySelectorAll('.feed-item');
-    if (feedItems.length === 0) {
-        console.log('[Navigation] No feed items to navigate');
+
+    if (filterButtons.length === 0 && feedItems.length === 0) {
+        console.log('[Navigation] No feed controls or items to navigate');
         return;
     }
 
     STATE.navigationMode = 'feed';
-    STATE.navigationItems = Array.from(feedItems);
+    STATE.feedFilterButtons = Array.from(filterButtons);
+    STATE.feedItems = Array.from(feedItems);
+    STATE.feedNavigationFocus = 'buttons'; // 'buttons' or 'items'
+    STATE.feedButtonIndex = 0;
+    STATE.feedItemIndex = -1;
+    STATE.navigationItems = STATE.feedFilterButtons;
     STATE.navigationIndex = 0;
-    updateNavigationHighlight();
-    console.log('[Navigation] Feed navigation mode activated');
+
+    if (STATE.feedFilterButtons.length > 0) {
+        updateNavigationHighlight();
+    }
+    console.log('[Navigation] Feed navigation mode activated (filter buttons)');
 }
 
 function enterSearchNavigationMode() {
@@ -836,6 +924,61 @@ function enterSearchNavigationMode() {
     updateNavigationHighlight();
 }
 
+function navigateFeedLeft() {
+    if (STATE.feedNavigationFocus !== 'buttons' || STATE.feedFilterButtons.length === 0) {
+        return;
+    }
+    STATE.feedButtonIndex = (STATE.feedButtonIndex - 1 + STATE.feedFilterButtons.length) % STATE.feedFilterButtons.length;
+    STATE.navigationItems = STATE.feedFilterButtons;
+    STATE.navigationIndex = STATE.feedButtonIndex;
+    updateNavigationHighlight();
+    scrollToNavigationItem();
+}
+
+function navigateFeedRight() {
+    if (STATE.feedNavigationFocus !== 'buttons' || STATE.feedFilterButtons.length === 0) {
+        return;
+    }
+    STATE.feedButtonIndex = (STATE.feedButtonIndex + 1) % STATE.feedFilterButtons.length;
+    STATE.navigationItems = STATE.feedFilterButtons;
+    STATE.navigationIndex = STATE.feedButtonIndex;
+    updateNavigationHighlight();
+    scrollToNavigationItem();
+}
+
+function navigateFeedDown() {
+    if (STATE.feedItems.length === 0) {
+        return;
+    }
+    // Switch to items focus
+    STATE.feedNavigationFocus = 'items';
+    STATE.feedItemIndex = Math.min(STATE.feedItemIndex + 1, STATE.feedItems.length - 1);
+    if (STATE.feedItemIndex < 0) STATE.feedItemIndex = 0;
+    STATE.navigationItems = STATE.feedItems;
+    STATE.navigationIndex = STATE.feedItemIndex;
+    updateNavigationHighlight();
+    scrollToNavigationItem();
+}
+
+function navigateFeedUp() {
+    if (STATE.feedNavigationFocus === 'items' && STATE.feedItemIndex > 0) {
+        // Move up in items
+        STATE.feedItemIndex--;
+        STATE.navigationItems = STATE.feedItems;
+        STATE.navigationIndex = STATE.feedItemIndex;
+        updateNavigationHighlight();
+        scrollToNavigationItem();
+    } else if (STATE.feedNavigationFocus === 'items' && STATE.feedItemIndex === 0) {
+        // Switch back to buttons
+        STATE.feedNavigationFocus = 'buttons';
+        STATE.feedItemIndex = -1;
+        STATE.navigationItems = STATE.feedFilterButtons;
+        STATE.navigationIndex = STATE.feedButtonIndex;
+        updateNavigationHighlight();
+        scrollToNavigationItem();
+    }
+}
+
 function exitNavigationMode() {
     if (STATE.navigationMode) {
         console.log('[Navigation] Exiting navigation mode:', STATE.navigationMode);
@@ -843,6 +986,12 @@ function exitNavigationMode() {
         STATE.navigationMode = null;
         STATE.navigationIndex = -1;
         STATE.navigationItems = [];
+        // Clean up feed-specific state
+        STATE.feedFilterButtons = [];
+        STATE.feedItems = [];
+        STATE.feedNavigationFocus = null;
+        STATE.feedButtonIndex = 0;
+        STATE.feedItemIndex = -1;
     }
 }
 
@@ -905,9 +1054,29 @@ function activateCurrentItem() {
             break;
 
         case 'bookmarks':
-            // Click the bookmark link
-            item.click();
-            exitNavigationMode();
+            // Check if it's a folder summary or a link
+            if (item.tagName === 'SUMMARY') {
+                // Toggle the folder open/closed
+                const details = item.parentElement;
+                if (details && details.tagName === 'DETAILS') {
+                    details.open = !details.open;
+                    // Refresh the navigation items to include newly visible items
+                    setTimeout(() => {
+                        const currentItem = item;
+                        enterBookmarkNavigationMode();
+                        // Find and restore position to the toggled folder
+                        const newIndex = STATE.navigationItems.indexOf(currentItem);
+                        if (newIndex !== -1) {
+                            STATE.navigationIndex = newIndex;
+                            updateNavigationHighlight();
+                        }
+                    }, 10);
+                }
+            } else {
+                // It's a link, open it
+                item.click();
+                exitNavigationMode();
+            }
             break;
 
         case 'applinks':
@@ -917,12 +1086,18 @@ function activateCurrentItem() {
             break;
 
         case 'feed':
-            // Find and click the feed item link
-            const feedLink = item.querySelector('.feed-item-title a, a');
-            if (feedLink) {
-                feedLink.click();
+            if (STATE.feedNavigationFocus === 'buttons') {
+                // Click the filter button
+                item.click();
+                // Don't exit navigation mode, just let the feed refresh
+            } else {
+                // Find and click the feed item link
+                const feedLink = item.querySelector('.feed-item-title a, .feed-item-link, a');
+                if (feedLink) {
+                    feedLink.click();
+                }
+                exitNavigationMode();
             }
-            exitNavigationMode();
             break;
     }
 }
@@ -1024,13 +1199,13 @@ function updateTimeBasedBackground(now) {
         backgroundImage = 'backgrounds/night.jpg';
     } else if (hour >= 5 && hour < 8) {
         // 05:00 to 08:00 - Sunrise
-        backgroundImage = 'backgrounds/dawn.jpeg';
+        backgroundImage = 'backgrounds/dawn.jpg';
     } else if (hour >= 8 && hour < 18) {
         // 08:00 to 18:00 - Day
         backgroundImage = 'backgrounds/day.jpeg';
     } else {
         // 18:00 to 20:00 - Sunset
-        backgroundImage = 'backgrounds/dawn.jpeg';
+        backgroundImage = 'backgrounds/dawn.jpg';
     }
 
     // Apply background to body
@@ -1729,10 +1904,24 @@ function computeIntervalState(timer, now) {
     };
 }
 
-function toggleTimerPanel() {
-    STATE.timerPanelVisible = !STATE.timerPanelVisible;
+function setTimerPanelVisibility(visible) {
+    const nextValue = Boolean(visible);
+    if (STATE.timerPanelVisible === nextValue) return;
+    STATE.timerPanelVisible = nextValue;
     syncTimerPanelState();
     displayFeed(); // Refresh the display to show/hide timer panel
+}
+
+function toggleTimerPanel() {
+    setTimerPanelVisibility(!STATE.timerPanelVisible);
+}
+
+function openTimerPanel() {
+    setTimerPanelVisibility(true);
+}
+
+function closeTimerPanel() {
+    setTimerPanelVisibility(false);
 }
 
 function syncTimerPanelState() {
@@ -2223,7 +2412,8 @@ async function loadNextcloudFeeds() {
     }
 }
 
-async function loadNextcloudFeed(folderId = null, appendMode = false) {
+async function loadNextcloudFeed(folderId = null, options = {}) {
+    const { append = false, offsetOverride = null } = options;
     if (!CONFIG.NEXTCLOUD_URL || CONFIG.NEXTCLOUD_USER === 'YOUR_USERNAME') {
         STATE.latestItems = [];
 
@@ -2245,21 +2435,28 @@ async function loadNextcloudFeed(folderId = null, appendMode = false) {
         return;
     }
 
+    if (STATE.feedLoading) return;
+    STATE.feedLoading = true;
+
     try {
         const auth = btoa(`${CONFIG.NEXTCLOUD_USER}:${CONFIG.NEXTCLOUD_PASS}`);
 
-        // Determine batch size based on whether this is initial load or load more
-        const batchSize = appendMode ? CONFIG.FEED_ITEMS_PER_PAGE : CONFIG.INITIAL_FEED_ITEMS;
-
         const includeRead = STATE.feedViewFilter === 'all';
+        const batchSize = includeRead ? (CONFIG.FEED_ITEMS_PER_PAGE || CONFIG.INITIAL_FEED_ITEMS) : CONFIG.INITIAL_FEED_ITEMS;
+        const isStarredMode = STATE.showStarredOnly;
+        let offset = includeRead ? STATE.feedOffset : 0;
+        if (offsetOverride !== null) {
+            offset = offsetOverride;
+        }
+
         const params = new URLSearchParams({
-            type: folderId === null ? '3' : '1',
+            type: isStarredMode ? '2' : (folderId === null ? '3' : '1'),
             getRead: includeRead ? 'true' : 'false',
             batchSize: batchSize.toString(),
-            offset: STATE.feedOffset.toString()
+            offset: offset.toString()
         });
 
-        if (folderId !== null) {
+        if (!isStarredMode && folderId !== null) {
             params.set('id', folderId.toString());
         }
 
@@ -2277,24 +2474,29 @@ async function loadNextcloudFeed(folderId = null, appendMode = false) {
         const data = await response.json();
         const newItems = data.items || [];
 
-        // Check if there are more items to load
-        STATE.feedHasMore = newItems.length >= batchSize;
+        const shouldAppend = append && includeRead;
 
-        // Update offset for next load
-        STATE.feedOffset += newItems.length;
-
-        // Either append or replace items based on mode
-        if (appendMode) {
-            STATE.latestItems = [...STATE.latestItems, ...newItems];
+        if (shouldAppend) {
+            if (!newItems.length) {
+                STATE.feedHasMore = false;
+            } else {
+                STATE.latestItems = [...STATE.latestItems, ...newItems];
+                STATE.feedOffset += newItems.length;
+                STATE.feedHasMore = newItems.length === batchSize;
+            }
         } else {
             STATE.latestItems = newItems;
+            STATE.feedOffset = includeRead ? newItems.length : 0;
+            STATE.feedHasMore = includeRead && newItems.length === batchSize;
         }
 
         applyLocalReadOverrides(STATE.latestItems);
+        STATE.feedLoading = false;
         displayFeed();
         processReadSyncQueue();
     } catch (error) {
         console.error('Feed fetch error:', error);
+        STATE.feedLoading = false;
 
         // If timer panel is visible, show it in fullscreen (no feed controls)
         if (STATE.timerPanelVisible) {
@@ -2479,18 +2681,23 @@ function displayFolderMenu() {
         `;
     }
 
-    const isAllActive = STATE.selectedFolder === null;
+    const isAllActive = STATE.selectedFolder === null && !STATE.showStarredOnly;
+    const starActive = STATE.showStarredOnly;
     const menuHTML = `
         <div class="feed-folder-menu">
             ${displayViewToggle()}
-            <button class="folder-btn ${isAllActive ? 'active' : ''}" data-folder-id="null">
+            <button class="folder-btn ${isAllActive ? 'active' : ''}" data-folder-id="null" title="All items">
                 All
+            </button>
+            <button class="folder-btn folder-btn--starred ${starActive ? 'active' : ''}" data-folder-starred="true" title="Starred items">
+                <img src="icons/${starActive ? 'starred' : 'unstarred'}.png" alt="Starred items" class="folder-icon folder-icon--star">
             </button>
             ${STATE.folders.map(folder => {
                 const isActive = STATE.selectedFolder === folder.id;
+                const display = renderFolderLabel(folder.name);
                 return `
-                    <button class="folder-btn ${isActive ? 'active' : ''}" data-folder-id="${folder.id}">
-                        ${escapeHtml(folder.name)}
+                    <button class="folder-btn ${isActive ? 'active' : ''}" data-folder-id="${folder.id}" title="${escapeHtml(display.title)}">
+                        ${display.html}
                     </button>
                 `;
             }).join('')}
@@ -2498,6 +2705,30 @@ function displayFolderMenu() {
     `;
 
     return menuHTML;
+}
+
+function renderFolderLabel(folderName) {
+    const name = (folderName || '').trim();
+    const iconMap = [
+        { match: '🎹', src: 'icons/music.svg', alt: 'Music' },
+        { match: '🎵', src: 'icons/tiktok.svg', alt: 'TikTok' },
+        { match: '🎶', src: 'icons/tiktok.svg', alt: 'TikTok' },
+        { match: '▶', src: 'icons/play.svg', alt: 'Video' },
+        { match: '▶️', src: 'icons/video.svg', alt: 'Video' },
+        { match: '📰', src: 'icons/blog.svg', alt: 'Blog' }
+    ];
+
+    const mapping = iconMap.find(entry => name.includes(entry.match));
+    if (mapping) {
+        return {
+            html: `<img src="${mapping.src}" alt="${escapeHtml(mapping.alt)}" class="folder-icon">`,
+            title: mapping.alt
+        };
+    }
+    return {
+        html: escapeHtml(name || 'Folder'),
+        title: name || 'Folder'
+    };
 }
 
 function displayFeed() {
@@ -2522,30 +2753,27 @@ function displayFeed() {
         const message = STATE.feedViewFilter === 'all'
             ? '<p style="padding:1rem;"><em>No items to display</em></p>'
             : '<p style="padding:1rem;"><em>No unread items</em></p>';
-        DOM.overview.innerHTML = message + controlsHTML;
+        const footerHTML = getFeedFooterHTML();
+        DOM.overview.innerHTML = message + footerHTML + controlsHTML;
         attachViewToggleHandlers();
         attachFolderClickHandlers();
+        attachRefreshHandler();
+        attachLoadMoreHandler();
         attachTimerControlHandlers();
         renderTimerLists();
         syncTimerPanelState();
         return;
     }
 
-    const loadMoreHTML = STATE.feedHasMore ? `
-        <div class="feed-load-more-row">
-            <button class="feed-load-more" ${STATE.feedLoading ? 'disabled' : ''}>
-                ${STATE.feedLoading ? 'Loading...' : `Load More (${CONFIG.FEED_ITEMS_PER_PAGE})`}
-            </button>
-        </div>
-    ` : '';
+    const footerHTML = getFeedFooterHTML();
 
     const feedHTML = `
         <div class="feed-region">
             <div class="bluesky-feed">
                 ${items.map(item => createFeedCard(item)).join('')}
             </div>
-            ${loadMoreHTML}
         </div>
+        ${footerHTML}
     `;
 
     DOM.overview.innerHTML = feedHTML + controlsHTML;
@@ -2553,32 +2781,11 @@ function displayFeed() {
     attachViewToggleHandlers();
     attachFolderClickHandlers();
     attachFeedItemInteractions();
+    attachStarToggleHandlers();
     attachTimerControlHandlers();
+    attachRefreshHandler();
     attachLoadMoreHandler();
     syncTimerPanelState();
-}
-
-async function loadMoreFeedItems() {
-    if (STATE.feedLoading || !STATE.feedHasMore) return;
-
-    STATE.feedLoading = true;
-    displayFeed(); // Re-render to show loading state
-
-    try {
-        await loadNextcloudFeed(STATE.selectedFolder, true); // true = append mode
-    } catch (error) {
-        console.error('Error loading more feed items:', error);
-    } finally {
-        STATE.feedLoading = false;
-        displayFeed(); // Re-render with new items or error state
-    }
-}
-
-function attachLoadMoreHandler() {
-    const loadMoreBtn = document.querySelector('.feed-load-more');
-    if (loadMoreBtn) {
-        loadMoreBtn.addEventListener('click', loadMoreFeedItems);
-    }
 }
 
 function getFeedControlsHTML() {
@@ -2590,10 +2797,78 @@ function getFeedControlsHTML() {
     `;
 }
 
+function getFeedFooterHTML() {
+    if (STATE.feedViewFilter !== 'all') {
+        return `
+            <div class="feed-footer">
+                <button class="feed-refresh-btn" ${STATE.feedLoading ? 'disabled' : ''}>
+                    ${STATE.feedLoading ? 'Loading…' : 'Refresh'}
+                </button>
+            </div>
+        `;
+    }
+
+    if (!STATE.feedHasMore) return '';
+    return `
+        <div class="feed-footer">
+            <button class="feed-load-more" ${STATE.feedLoading ? 'disabled' : ''}>
+                ${STATE.feedLoading ? 'Loading…' : 'Load More'}
+            </button>
+        </div>
+    `;
+}
+
+function attachRefreshHandler() {
+    const refreshBtn = document.querySelector('.feed-refresh-btn');
+    if (refreshBtn && !refreshBtn.dataset.bound) {
+        refreshBtn.dataset.bound = 'true';
+        refreshBtn.addEventListener('click', (event) => {
+            event.preventDefault();
+            refreshUnreadFeed();
+        });
+    }
+}
+
+function attachLoadMoreHandler() {
+    const loadMoreBtn = document.querySelector('.feed-load-more');
+    if (loadMoreBtn && !loadMoreBtn.dataset.bound) {
+        loadMoreBtn.dataset.bound = 'true';
+        loadMoreBtn.addEventListener('click', (event) => {
+            event.preventDefault();
+            loadMoreFeedItems();
+        });
+    }
+}
+
+function refreshUnreadFeed() {
+    if (STATE.feedViewFilter === 'all' || STATE.feedLoading) return;
+    // Don't mark all items as read - just reload to bring in new unread items
+    // Items the user clicked on will already be marked as read individually
+    STATE.feedOffset = 0;
+    loadNextcloudFeed(STATE.selectedFolder, { offsetOverride: 0 });
+}
+
+function loadMoreFeedItems() {
+    if (STATE.feedViewFilter !== 'all' || STATE.feedLoading || !STATE.feedHasMore) return;
+    loadNextcloudFeed(STATE.selectedFolder, { append: true });
+}
+
+function markVisibleItemsAsRead() {
+    if (!Array.isArray(STATE.latestItems)) return;
+    STATE.latestItems.forEach(item => {
+        if (item && item.unread) {
+            markFeedItemAsRead(item.id);
+        }
+    });
+}
+
 function getFilteredFeedItems() {
-    const items = STATE.latestItems || [];
+    let items = (STATE.latestItems || []).filter(Boolean);
+    if (STATE.showStarredOnly) {
+        items = items.filter(item => item && item.starred);
+    }
     if (STATE.feedViewFilter === 'all') {
-        return items.filter(Boolean);
+        return items;
     }
     return items.filter(item => item && isItemUnread(item));
 }
@@ -2620,6 +2895,27 @@ function createFeedCard(item) {
     const folder = STATE.folders.find(f => f.id === item.folderId);
     const feed = STATE.feeds.find(f => f.id === item.feedId);
     const feedName = feed ? feed.title : (item.feedTitle || 'Unknown Feed');
+    const sourceStrings = [
+        item?.url,
+        item?.enclosureLink,
+        item?.feedLink,
+        feed?.url,
+        feed?.link
+    ]
+        .filter(Boolean)
+        .map(value => String(value).toLowerCase());
+    const matchesSource = (needle) => sourceStrings.some(src => src.includes(needle));
+    const forcedAvatarIcon = (() => {
+        if (matchesSource('rss-timestamp-adder')) {
+            return { src: 'icons/tiktok.svg', alt: 'TikTok feed' };
+        }
+        if (matchesSource('youtube-rss')) {
+            return { src: 'icons/video.svg', alt: 'Video feed' };
+        }
+        return null;
+    })();
+    const rawItemUrl = item?.url || '';
+    const safeItemUrl = escapeHtml(rawItemUrl);
     const normalizedTitle = (item.title || '').trim();
     const showTitle = shouldDisplayFeedTitle(normalizedTitle);
     const rawExcerpt = CONFIG.SHOW_POST_CONTENT ? getFeedExcerpt(item.body) : '';
@@ -2629,15 +2925,16 @@ function createFeedCard(item) {
     const metrics = extractEngagementMetrics(item);
     const isUnread = isItemUnread(item);
     const titleMarkup = showTitle ? `
-            <a href="${escapeHtml(item.url)}"
-               target="_blank"
-               rel="noopener noreferrer"
+            <a href="${safeItemUrl}"
                class="feed-item-link">
                 <h3 class="feed-title">${escapeHtml(normalizedTitle)}</h3>
             </a>
         ` : '';
 
     const avatarMarkup = (() => {
+        if (forcedAvatarIcon) {
+            return `<img src="${forcedAvatarIcon.src}" alt="${escapeHtml(forcedAvatarIcon.alt)}" class="feed-avatar feed-avatar--custom">`;
+        }
         if (item.feedTitle && item.feedTitle.toLowerCase().includes('tiktok') && item.body) {
             const temp = document.createElement('div');
             temp.innerHTML = item.body;
@@ -2650,25 +2947,44 @@ function createFeedCard(item) {
             ? `<img src="https://www.google.com/s2/favicons?domain=${domain}&sz=64" alt="" class="feed-avatar">`
             : `<div class="feed-avatar feed-avatar--fallback">${escapeHtml(feedName.charAt(0) || '?')}</div>`;
     })();
+    const feedSourceMarkup = `
+        <div class="feed-source">
+            <span class="feed-source-name">${escapeHtml(feedName)}</span>
+            <div class="feed-meta-line">
+                ${folder ? `<span class="feed-folder-pill">${escapeHtml(folder.name)}</span>` : ''}
+                ${timestamp ? `<span class="feed-date">${escapeHtml(timestamp)}</span>` : ''}
+            </div>
+        </div>
+    `;
+
+    const isStarred = Boolean(item.starred);
+    const starButton = `
+        <button class="feed-star-btn ${isStarred ? 'is-starred' : ''}"
+                type="button"
+                data-item-id="${item.id}"
+                aria-pressed="${isStarred}"
+                title="${isStarred ? 'Unstar item' : 'Star item'}">
+            <img src="icons/${isStarred ? 'starred' : 'unstarred'}.png" alt="toggle star">
+        </button>
+    `;
 
     return `
         <article class="feed-item ${isUnread ? '' : 'feed-item--read'}"
-                 data-link="${escapeHtml(item.url || '')}"
+                 data-link="${safeItemUrl}"
                  data-item-id="${item.id}"
                  data-unread="${isUnread}">
             <div class="feed-item-top">
-                ${avatarMarkup}
-                <div class="feed-source">
-                    <span class="feed-source-name">${escapeHtml(feedName)}</span>
-                    <div class="feed-meta-line">
-                        ${folder ? `<span class="feed-folder-pill">${escapeHtml(folder.name)}</span>` : ''}
-                        ${timestamp ? `<span class="feed-date">${escapeHtml(timestamp)}</span>` : ''}
-                    </div>
+                <div class="feed-top-left">
+                    <a href="${safeItemUrl}" class="feed-top-link">
+                        ${avatarMarkup}
+                        ${feedSourceMarkup}
+                    </a>
                 </div>
+                ${starButton}
             </div>
             ${titleMarkup}
-            ${excerpt ? `<p class="feed-excerpt">${escapeHtml(excerpt)}</p>` : ''}
-            ${media ? `<div class="feed-media${media.variant ? ` feed-media--${media.variant}` : ''}">${media.markup}</div>` : ''}
+            ${excerpt ? `<p class="feed-excerpt"><a href="${safeItemUrl}" class="feed-excerpt-link">${escapeHtml(excerpt)}</a></p>` : ''}
+            ${media ? `<div class="${buildMediaClassList(media)}">${media.markup}</div>` : ''}
             ${metrics ? `
                 <div class="feed-metrics">
                     ${metrics.map(metric => `
@@ -2699,52 +3015,83 @@ function extractFeedMedia(item) {
         temp.innerHTML = item.body;
     }
 
-    const embedUrl = findEmbeddableVideoUrl(item, temp);
-    if (embedUrl) {
+    const videoResult = findEmbeddableVideoUrl(item, temp);
+    if (videoResult && videoResult.embedUrl && !/tiktok\.com/.test(videoResult.embedUrl)) {
+        // Convert embed URL back to watch URL for click-to-open
+        const baseWatchUrl = videoResult.originalUrl || videoResult.embedUrl.replace('/embed/', '/watch?v=');
+        const watchUrl = addInvidiousPlaybackSpeed(baseWatchUrl);
+
+        // Try to extract video ID and generate YouTube thumbnail
+        let thumbnailSrc = null;
+        const videoIdMatch = videoResult.embedUrl.match(/\/embed\/([^?]+)/);
+        if (videoIdMatch && videoIdMatch[1]) {
+            // Use YouTube's thumbnail service (works for both YouTube and Invidious)
+            thumbnailSrc = `https://img.youtube.com/vi/${videoIdMatch[1]}/hqdefault.jpg`;
+        }
+
+        // Fallback: try to find thumbnail in feed body
+        if (!thumbnailSrc) {
+            const image = temp?.querySelector('img');
+            thumbnailSrc = image ? (image.getAttribute('src') || image.getAttribute('data-src')) : null;
+        }
+
+        const backgroundStyle = thumbnailSrc
+            ? `background: linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.6)), url('${escapeHtml(thumbnailSrc)}') center/cover;`
+            : `background: rgba(74, 158, 255, 0.1);`;
+
         return {
-            variant: 'video',
+            variant: 'link',
             markup: `
-                <div class="feed-video-wrapper">
-                    <iframe
-                        src="${escapeHtml(embedUrl)}"
-                        title="Embedded video"
-                        loading="lazy"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                        allowfullscreen
-                        referrerpolicy="strict-origin-when-cross-origin">
-                    </iframe>
-                </div>
+                <a href="${escapeHtml(watchUrl)}" class="feed-video-link" style="display: flex; align-items: center; justify-content: center; text-align: center; min-height: 200px; padding: 2rem; ${backgroundStyle} border-radius: 12px; text-decoration: none; transition: all 0.2s ease; position: relative; overflow: hidden;">
+                    <img src="icons/play.svg" alt="Play" class="feed-video-play-icon">
+                </a>
             `
         };
+    }
+
+    const image = temp?.querySelector('img');
+    const tiktokThumbnail = extractTikTokThumbnail(image);
+
+    if (tiktokThumbnail) {
+        const src = tiktokThumbnail.getAttribute('src') || tiktokThumbnail.getAttribute('data-src');
+        if (src) {
+            return {
+                variant: 'link',
+                markup: `<a href="${escapeHtml(item.url || '')}" class="feed-image-link">
+                            <img src="${escapeHtml(src)}" alt="${escapeHtml(tiktokThumbnail.getAttribute('alt') || '')}" loading="lazy">
+                         </a>`
+            };
+        }
     }
 
     if (item.enclosureLink && item.enclosureMime && item.enclosureMime.startsWith('image/')) {
         return {
             variant: 'image',
-            markup: `<img src="${escapeHtml(item.enclosureLink)}" alt="" loading="lazy">`
+            markup: `<a href="${escapeHtml(item.url || '')}" class="feed-image-link">
+                        <img src="${escapeHtml(item.enclosureLink)}" alt="" loading="lazy">
+                     </a>`
         };
     }
 
-    if (!temp) return null;
-
-    const image = temp.querySelector('img');
     if (image) {
-        const src = image.getAttribute('src');
-        if (src) {
+        const src = image.getAttribute('src') || image.getAttribute('data-src');
+        if (src && !isTikTokCdn(src)) {
             return {
                 variant: 'image',
-                markup: `<img src="${escapeHtml(src)}" alt="${escapeHtml(image.getAttribute('alt') || '')}" loading="lazy">`
+                markup: `<a href="${escapeHtml(item.url || '')}" class="feed-image-link">
+                            <img src="${escapeHtml(src)}" alt="${escapeHtml(image.getAttribute('alt') || '')}" loading="lazy">
+                         </a>`
             };
         }
     }
 
-    const video = temp.querySelector('video, iframe');
+    const video = temp?.querySelector('video, iframe');
     if (video) {
         const src = video.getAttribute('src');
-        if (src) {
+        if (src && !/tiktok\.com/.test(src)) {
             return {
                 variant: 'link',
-                markup: `<a href="${escapeHtml(src)}" target="_blank" rel="noopener noreferrer" class="feed-media-link">View media</a>`
+                markup: `<a href="${escapeHtml(src)}" class="feed-media-link">View media</a>`
             };
         }
     }
@@ -2773,7 +3120,12 @@ function findEmbeddableVideoUrl(item, tempNode) {
 
     for (const raw of candidates) {
         const embedUrl = convertUrlToEmbed(raw);
-        if (embedUrl) return embedUrl;
+        if (embedUrl) {
+            return {
+                originalUrl: raw,
+                embedUrl: embedUrl
+            };
+        }
     }
     return null;
 }
@@ -2808,15 +3160,71 @@ function convertUrlToEmbed(rawUrl) {
         return videoId ? `https://www.youtube.com/embed/${videoId}` : null;
     }
 
-    if (INVIDIOUS_EMBED_HOSTS.some((allowed) => host === allowed || host.endsWith(`.${allowed}`))) {
+    if (isInvidiousHost(host)) {
         if (pathname.startsWith('/embed/')) {
-            return `${origin}${pathname}${parsed.search}`;
+            return addInvidiousPlaybackSpeed(`${origin}${pathname}${parsed.search}`);
         }
         const videoId = parsed.searchParams.get('v');
-        return videoId ? `${origin}/embed/${videoId}` : null;
+        return videoId ? addInvidiousPlaybackSpeed(`${origin}/embed/${videoId}`) : null;
+    }
+
+    if (host.endsWith('tiktok.com')) {
+        const videoId = extractTikTokVideoId(pathname);
+        if (videoId) {
+            const params = new URLSearchParams(parsed.search);
+            if (!params.has('loop')) params.set('loop', '1');
+            if (!params.has('controls')) params.set('controls', '1');
+            params.set('speed', '1.75');
+            return `https://www.tiktok.com/embed/${videoId}?${params.toString()}`;
+        }
     }
 
     return null;
+}
+
+function addInvidiousPlaybackSpeed(urlString) {
+    try {
+        const url = new URL(urlString);
+        if (!isInvidiousHost(url.hostname)) {
+            return urlString;
+        }
+        url.searchParams.set('speed', '1.75');
+        return url.toString();
+    } catch (error) {
+        console.warn('Unable to set Invidious playback speed for', urlString, error);
+        return urlString;
+    }
+}
+
+function extractTikTokVideoId(pathname) {
+    const parts = pathname.split('/').filter(Boolean);
+    const videoIndex = parts.findIndex((segment) => segment === 'video');
+    if (videoIndex !== -1 && parts[videoIndex + 1]) {
+        return parts[videoIndex + 1];
+    }
+    const lastSegment = parts[parts.length - 1];
+    if (lastSegment && /^[0-9A-Za-z_-]+$/.test(lastSegment)) {
+        return lastSegment;
+    }
+    return null;
+}
+
+function extractTikTokThumbnail(imageNode) {
+    if (!imageNode) return null;
+    const src = imageNode.getAttribute('src') || imageNode.getAttribute('data-src');
+    if (!src) return null;
+    return isTikTokCdn(src) ? imageNode : null;
+}
+
+function isTikTokCdn(url) {
+    return /tiktokcdn\.com|p\d+-sign/.test(url);
+}
+
+function buildMediaClassList(media) {
+    const classes = ['feed-media'];
+    if (media.variant) classes.push(`feed-media--${media.variant}`);
+    if (media.extraClass) classes.push(media.extraClass);
+    return classes.join(' ');
 }
 
 function formatPublishDate(pubDate) {
@@ -2934,13 +3342,30 @@ function attachFeedItemInteractions() {
     });
 }
 
+function attachStarToggleHandlers() {
+    document.querySelectorAll('.feed-star-btn').forEach(btn => {
+        if (btn.dataset.bound) return;
+        btn.dataset.bound = 'true';
+        btn.addEventListener('click', async (event) => {
+            event.stopPropagation();
+            const itemId = parseInt(btn.dataset.itemId, 10);
+            if (Number.isNaN(itemId)) return;
+            const shouldStar = !btn.classList.contains('is-starred');
+            try {
+                await updateItemStar(itemId, shouldStar, btn);
+            } catch (error) {
+                console.error('Star toggle error:', error);
+            }
+        });
+    });
+}
+
 function attachViewToggleHandlers() {
     document.querySelectorAll('.view-toggle-chip').forEach(btn => {
         btn.addEventListener('click', () => {
             const view = btn.dataset.view;
             if (!view || view === STATE.feedViewFilter) return;
             STATE.feedViewFilter = view;
-            // Reset pagination when filter changes
             STATE.feedOffset = 0;
             STATE.feedHasMore = true;
             loadNextcloudFeed(STATE.selectedFolder);
@@ -3103,14 +3528,77 @@ async function syncItemReadStatus(itemId) {
 function attachFolderClickHandlers() {
     document.querySelectorAll('.folder-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-            const folderId = btn.dataset.folderId;
-            STATE.selectedFolder = folderId === 'null' ? null : parseInt(folderId);
-            // Reset pagination when folder changes
+            const isStarred = btn.dataset.folderStarred === 'true';
+            if (isStarred) {
+                if (STATE.showStarredOnly) return;
+                STATE.showStarredOnly = true;
+                STATE.selectedFolder = null;
+                STATE.feedViewFilter = 'all';
+            } else {
+                const folderId = btn.dataset.folderId;
+                STATE.showStarredOnly = false;
+                STATE.selectedFolder = folderId === 'null' ? null : parseInt(folderId);
+            }
             STATE.feedOffset = 0;
             STATE.feedHasMore = true;
             loadNextcloudFeed(STATE.selectedFolder);
         });
     });
+}
+
+async function updateItemStar(itemId, shouldStar, button) {
+    if (!CONFIG.NEXTCLOUD_URL || CONFIG.NEXTCLOUD_USER === 'YOUR_USERNAME') return;
+    if (!Number.isInteger(itemId)) return;
+    if (STATE.pendingStarToggles.has(itemId)) return;
+
+    STATE.pendingStarToggles.add(itemId);
+    setStarButtonState(button, shouldStar);
+    updateLocalItemStar(itemId, shouldStar);
+    if (button) button.disabled = true;
+
+    try {
+        const auth = btoa(`${CONFIG.NEXTCLOUD_USER}:${CONFIG.NEXTCLOUD_PASS}`);
+        const endpoint = shouldStar ? 'star' : 'unstar';
+        const response = await fetch(`${CONFIG.NEXTCLOUD_URL}/index.php/apps/news/api/v1-3/items/${itemId}/${endpoint}`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Basic ${auth}`,
+                'Accept': 'application/json'
+            }
+        });
+        if (!response.ok) throw new Error('Failed to update star status');
+
+        if (STATE.showStarredOnly && !shouldStar) {
+            STATE.latestItems = STATE.latestItems.filter(item => item.id !== itemId);
+            displayFeed();
+        }
+    } catch (error) {
+        console.error('Star update error:', error);
+        setStarButtonState(button, !shouldStar);
+        updateLocalItemStar(itemId, !shouldStar);
+    } finally {
+        if (button) button.disabled = false;
+        STATE.pendingStarToggles.delete(itemId);
+    }
+}
+
+function setStarButtonState(button, shouldStar) {
+    if (!button) return;
+    button.classList.toggle('is-starred', shouldStar);
+    button.setAttribute('aria-pressed', shouldStar);
+    button.title = shouldStar ? 'Unstar item' : 'Star item';
+    const img = button.querySelector('img');
+    if (img) {
+        img.src = `icons/${shouldStar ? 'starred' : 'unstarred'}.png`;
+        img.alt = shouldStar ? 'starred' : 'unstarred';
+    }
+}
+
+function updateLocalItemStar(itemId, shouldStar) {
+    const targetItem = STATE.latestItems.find(item => item.id === itemId);
+    if (targetItem) {
+        targetItem.starred = shouldStar;
+    }
 }
 
 // ============================================================================
@@ -3462,7 +3950,7 @@ function enterSearchMode(clearInput = false) {
                 <span>Google Images</span>
             </a>
             <a href="https://www.perplexity.ai/search?q=${encodedQuery}" target="_blank">
-                <img src="icons/perplexity.svg" alt="Perplexity" style="width:24px; height:24px; flex-shrink:0;">
+                <img src="icons/perplexity.webp" alt="Perplexity" style="width:24px; height:24px; flex-shrink:0;">
                 <span>Perplexity AI</span>
             </a>
             <button type="button" class="quick-timer-btn">
@@ -3471,7 +3959,6 @@ function enterSearchMode(clearInput = false) {
             </button>
         </div>
     `;
-    attachQuickTimerButton(DOM.overview, '');
 }
 
 function exitSearchMode() {
@@ -3533,13 +4020,8 @@ async function handleSearchInput(event) {
                     <img src="icons/perplexity.svg" alt="Perplexity" style="width:24px; height:24px; flex-shrink:0;">
                     <span>Perplexity AI</span>
                 </a>
-                <button type="button" class="quick-timer-btn">
-                    <img src="icons/timer.webp" alt="Timer" style="width:24px; height:24px; flex-shrink:0;">
-                    <span>Add Timer</span>
-                </button>
             </div>
         `;
-        attachQuickTimerButton(DOM.overview, '');
         return;
     }
 
@@ -3722,16 +4204,11 @@ function displaySuggestions(suggestions, container) {
                 <img src="icons/perplexity.svg" alt="Perplexity" style="width:24px; height:24px; flex-shrink:0;">
                 <span>Perplexity AI</span>
             </a>
-            <button type="button" class="quick-timer-btn">
-                <img src="icons/timer.webp" alt="Timer" style="width:24px; height:24px; flex-shrink:0;">
-                <span>Add Timer</span>
-            </button>
         </div>
     `;
 
     if (!suggestions || suggestions.length === 0) {
         container.innerHTML = quickActionsHTML;
-        attachQuickTimerButton(container, query);
         return;
     }
 
@@ -3792,48 +4269,6 @@ function attachQuickTaskButton(container, query) {
     const btn = container.querySelector('.quick-task-btn');
     if (btn) {
         btn.addEventListener('click', () => openTaskModal(query));
-    }
-}
-
-function attachQuickTimerButton(container, query) {
-    if (!container) return;
-    const btn = container.querySelector('.quick-timer-btn');
-    if (btn) {
-        btn.addEventListener('click', () => {
-            // Create a simple timer with the query as the label
-            const timerLabel = query || 'New Timer';
-
-            // Create a local timer (checklist/no-time mode) with the query as label
-            const timer = {
-                id: generateLocalIntervalTimerId(),
-                label: timerLabel,
-                intervals: [],
-                durationMs: 0,
-                elapsedMs: 0,
-                state: 'idle',
-                mode: 'checklist',
-                createdAt: Date.now(),
-                updatedAt: Date.now(),
-                startedAt: null
-            };
-
-            STATE.localIntervalTimers.push(timer);
-            persistLocalIntervalTimers();
-
-            // Show the timer panel and render
-            if (!STATE.timerPanelVisible) {
-                STATE.timerPanelVisible = true;
-            }
-            renderTimerLists();
-
-            // Show confirmation
-            btn.textContent = 'Timer Added!';
-            btn.disabled = true;
-            setTimeout(() => {
-                btn.innerHTML = '<img src="icons/timer.webp" alt="Timer" style="width:24px; height:24px; flex-shrink:0;"><span>Add Timer</span>';
-                btn.disabled = false;
-            }, 2000);
-        });
     }
 }
 
@@ -4537,10 +4972,8 @@ async function showSearchFallback(query) {
             <a href="https://duckduckgo.com/?q=${encodedQuery}" target="_blank">DuckDuckGo</a>
             <a href="https://www.google.com/search?tbm=isch&q=${encodedQuery}" target="_blank">Google Images</a>
             <a href="https://www.perplexity.ai/search?q=${encodedQuery}" target="_blank">Perplexity AI</a>
-            <button type="button" class="quick-timer-btn">Add Timer</button>
         </div>
     `;
-    attachQuickTimerButton(DOM.overview, query);
 
     // Get AI answer in text area
     DOM.text.innerHTML = '<div style="padding:1rem; color:#888;">Getting AI answer...</div>';
@@ -4664,6 +5097,7 @@ function stripHtml(html) {
 console.log('%c JUMPERLINK DASHBOARD v1.0 ', 'background: #4a9eff; color: #000; font-weight: bold; padding: 4px;');
 console.log('Personal Search & Info Dashboard');
 console.log('Configure API keys in script.js CONFIG object');
+
 function handleExternalSearchRedirect(query) {
     const raw = (query ?? '').toString();
     const trimmed = raw.trim();
